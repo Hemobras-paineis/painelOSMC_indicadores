@@ -17,13 +17,10 @@ let plantaChartInstance = null;
 
 let isTableVisible = false;
 
-const filterStatus = document.getElementById('filterStatus');
-const filterEmpresaResponsavel = document.getElementById('filterEmpresaResponsavel');
+const filterEquipamentoSala = document.getElementById('filterEquipamentoSala');
 const filterAnoEmissao = document.getElementById('filterAnoEmissao');
-const filterMesEmissao = document.getElementById('filterMesEmissao');
 const filterPlanta = document.getElementById('filterPlanta'); 
 const filterBloco = document.getElementById('filterBloco');
-const filterMotivo = document.getElementById('filterMotivo');
 const btnRefresh = document.getElementById('btnRefresh');
 const btnPdfReport = document.getElementById('btnPdfReport');
 
@@ -43,6 +40,119 @@ const btnPrev = document.getElementById('btnPrev');
 const btnNext = document.getElementById('btnNext');
 const jumpInput = document.getElementById('jumpInput');
 const btnJump = document.getElementById('btnJump');
+
+// Componente de dropdown com checkboxes, permitindo selecionar 1, vários ou todos os itens
+class MultiSelectDropdown {
+    constructor(prefix, textoPadrao, onChange) {
+        this.wrapper = document.getElementById(`${prefix}Wrapper`);
+        this.btn = document.getElementById(`${prefix}Btn`);
+        this.panel = document.getElementById(`${prefix}Panel`);
+        this.textoPadrao = textoPadrao;
+        this.onChange = onChange;
+        this.itens = [];
+        this.selecionados = new Set();
+
+        this.btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.togglePanel();
+        });
+
+        document.addEventListener('click', (e) => {
+            if (!this.wrapper.contains(e.target)) this.fecharPanel();
+        });
+    }
+
+    togglePanel() {
+        const estaAberto = !this.panel.hidden;
+        document.querySelectorAll('.multi-select-panel').forEach(p => p.hidden = true);
+        this.panel.hidden = estaAberto;
+    }
+
+    fecharPanel() {
+        this.panel.hidden = true;
+    }
+
+    preencher(itens) {
+        const selecionadosAnteriores = new Set(
+            Array.from(this.selecionados).filter(valor => itens.some(item => item.value === valor))
+        );
+        this.itens = itens;
+        this.selecionados = selecionadosAnteriores;
+
+        this.panel.innerHTML = '';
+
+        const acoes = document.createElement('div');
+        acoes.className = 'multi-select-panel-actions';
+        const btnTodos = document.createElement('button');
+        btnTodos.type = 'button';
+        btnTodos.textContent = 'Selecionar todos';
+        btnTodos.addEventListener('click', () => {
+            this.selecionados = new Set(this.itens.map(item => item.value));
+            this.atualizarCheckboxes();
+            this.atualizarTexto();
+            this.onChange();
+        });
+        const btnNenhum = document.createElement('button');
+        btnNenhum.type = 'button';
+        btnNenhum.textContent = 'Limpar';
+        btnNenhum.addEventListener('click', () => {
+            this.selecionados = new Set();
+            this.atualizarCheckboxes();
+            this.atualizarTexto();
+            this.onChange();
+        });
+        acoes.appendChild(btnTodos);
+        acoes.appendChild(btnNenhum);
+        this.panel.appendChild(acoes);
+
+        itens.forEach(({ value, label }) => {
+            const opcao = document.createElement('label');
+            opcao.className = 'multi-select-option';
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.value = value;
+            checkbox.checked = this.selecionados.has(value);
+            checkbox.addEventListener('change', () => {
+                if (checkbox.checked) this.selecionados.add(value);
+                else this.selecionados.delete(value);
+                this.atualizarTexto();
+                this.onChange();
+            });
+            const texto = document.createElement('span');
+            texto.textContent = label;
+            opcao.appendChild(checkbox);
+            opcao.appendChild(texto);
+            this.panel.appendChild(opcao);
+        });
+
+        this.atualizarTexto();
+    }
+
+    atualizarCheckboxes() {
+        this.panel.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+            checkbox.checked = this.selecionados.has(checkbox.value);
+        });
+    }
+
+    atualizarTexto() {
+        if (this.selecionados.size === 0) {
+            this.btn.textContent = this.textoPadrao;
+        } else if (this.selecionados.size === 1) {
+            const item = this.itens.find(item => this.selecionados.has(item.value));
+            this.btn.textContent = item ? item.label : this.textoPadrao;
+        } else {
+            this.btn.textContent = `${this.selecionados.size} selecionados`;
+        }
+    }
+
+    getSelecionados() {
+        return this.selecionados;
+    }
+}
+
+const filterStatusDropdown = new MultiSelectDropdown('filterStatus', 'Todos os Status', () => aplicarFiltrosGerais());
+const filterEmpresaResponsavelDropdown = new MultiSelectDropdown('filterEmpresaResponsavel', 'Todas as Empresas Responsáveis', () => aplicarFiltrosGerais());
+const filterMesEmissaoDropdown = new MultiSelectDropdown('filterMesEmissao', 'Todos os Meses de Emissão', () => aplicarFiltrosGerais());
 
 function init() {
     Chart.register(ChartDataLabels);
@@ -161,7 +271,6 @@ function popularFiltrosDinamicos() {
     const anosEmissao = new Set();
     const plantaSet = new Set(); 
     const blocoSet = new Set();
-    const motivoSet = new Set();
 
     allData.forEach(row => {
         // Índices remapeados devido à nova coluna Data/hora de Emissão
@@ -175,7 +284,6 @@ function popularFiltrosDinamicos() {
             anosEmissao.add(String(mesEmissao.ano));
         }
         if (row[4] !== "-") blocoSet.add(row[4]); // Bloco agora é 4
-        if (row[10] !== "-") motivoSet.add(row[10]); // Motivo agora é 10
         if (row[12] && row[12] !== "-") plantaSet.add(row[12]); // Planta agora é 12
     });
 
@@ -195,55 +303,45 @@ function popularFiltrosDinamicos() {
         });
     }
 
-    preencherSelect(filterStatus, statusSet);
-    preencherSelect(filterEmpresaResponsavel, empresaResponsavelSet);
     preencherSelect(filterAnoEmissao, anosEmissao);
-    preencherFiltroMeses(Array.from(mesesEmissao.values())
+    filterStatusDropdown.preencher(Array.from(statusSet).sort().map(valor => ({ value: valor, label: valor })));
+    filterEmpresaResponsavelDropdown.preencher(Array.from(empresaResponsavelSet).sort().map(valor => ({ value: valor, label: valor })));
+    filterMesEmissaoDropdown.preencher(Array.from(mesesEmissao.values())
+        .filter(mes => !filterAnoEmissao.value || String(mes.ano) === filterAnoEmissao.value)
         .sort((a, b) => a.chave.localeCompare(b.chave))
         .map(mes => ({ value: mes.chave, label: formatarMesEmissao(mes) })));
     preencherSelect(filterPlanta, plantaSet); 
     preencherSelect(filterBloco, blocoSet);
-    preencherSelect(filterMotivo, motivoSet);
-}
-
-function preencherFiltroMeses(meses) {
-    const mesesSelecionados = new Set(Array.from(filterMesEmissao.selectedOptions).map(option => option.value));
-    filterMesEmissao.innerHTML = '';
-
-    meses.forEach(({ value, label }) => {
-        const option = document.createElement('option');
-        option.value = value;
-        option.textContent = label;
-        option.selected = mesesSelecionados.has(value);
-        filterMesEmissao.appendChild(option);
-    });
 }
 
 function aplicarFiltrosGerais() {
-    const statusFiltro = filterStatus.value;
-    const empresaResponsavelFiltro = filterEmpresaResponsavel.value;
+    const statusFiltro = filterStatusDropdown.getSelecionados();
+    const empresaResponsavelFiltro = filterEmpresaResponsavelDropdown.getSelecionados();
     const anoEmissaoFiltro = filterAnoEmissao.value;
-    const mesesEmissaoFiltro = new Set(Array.from(filterMesEmissao.selectedOptions).map(option => option.value));
+    const mesesEmissaoFiltro = filterMesEmissaoDropdown.getSelecionados();
     const plantaFiltro = filterPlanta.value; 
     const blocoFiltro = filterBloco.value;
-    const motivoFiltro = filterMotivo.value;
+    const equipamentoSalaFiltro = filterEquipamentoSala.value.trim().toLowerCase();
 
     filteredData = allData.filter(row => {
         let cleanStatus = row[0] ? row[0].toString().replace(/⚠️|✅|⏸️|❌|⚙️|🛑/g, '').trim() : '';
 
-        const passouStatus = !statusFiltro || cleanStatus === statusFiltro;
-        const passouEmpresaResponsavel = !empresaResponsavelFiltro ||
-            row.empresaResponsavel === empresaResponsavelFiltro;
+        const passouStatus = statusFiltro.size === 0 || statusFiltro.has(cleanStatus);
+        const passouEmpresaResponsavel = empresaResponsavelFiltro.size === 0 ||
+            empresaResponsavelFiltro.has(row.empresaResponsavel);
         const mesEmissao = getMesEmissao(row[1]);
         const passouAnoEmissao = !anoEmissaoFiltro || (mesEmissao && String(mesEmissao.ano) === anoEmissaoFiltro);
         const passouMesEmissao = mesesEmissaoFiltro.size === 0 ||
             (mesEmissao && mesesEmissaoFiltro.has(mesEmissao.chave));
         const passouPlanta = !plantaFiltro || row[12] === plantaFiltro; 
         const passouBloco = !blocoFiltro || row[4] === blocoFiltro;
-        const passouMotivo = !motivoFiltro || row[10] === motivoFiltro;
+        const equipamentoVal = row[6] ? row[6].toString().toLowerCase() : '';
+        const salaVal = row[7] ? row[7].toString().toLowerCase() : '';
+        const passouEquipamentoSala = !equipamentoSalaFiltro ||
+            equipamentoVal.includes(equipamentoSalaFiltro) || salaVal.includes(equipamentoSalaFiltro);
 
         return passouStatus && passouEmpresaResponsavel && passouAnoEmissao && passouMesEmissao &&
-            passouPlanta && passouBloco && passouMotivo;
+            passouPlanta && passouBloco && passouEquipamentoSala;
     });
 
     currentPage = 1;
@@ -329,6 +427,57 @@ function getStatusPorMes(data) {
     return Array.from(dadosPorMes.values()).sort((a, b) => a.chave.localeCompare(b.chave));
 }
 
+function obterEstiloStatus(status) {
+    const valMin = (status || '').toLowerCase();
+    if (valMin.includes('resolvido') || valMin.includes('concluído') || valMin.includes('concluido') || valMin.includes('aprovado')) {
+        return { cor: [21, 87, 36], fundo: [212, 237, 218], tipo: 'check' };
+    } else if (valMin.includes('pendente') || valMin.includes('aguardando')) {
+        return { cor: [133, 100, 4], fundo: [255, 243, 205], tipo: 'alerta' };
+    } else if (valMin.includes('parado')) {
+        return { cor: [56, 61, 65], fundo: [226, 227, 229], tipo: 'pausa' };
+    } else if (valMin.includes('cancelado')) {
+        return { cor: [114, 28, 36], fundo: [248, 215, 218], tipo: 'x' };
+    } else if (valMin.includes('execução') || valMin.includes('execucao')) {
+        return { cor: [0, 64, 133], fundo: [204, 229, 255], tipo: 'engrenagem' };
+    }
+    return { cor: [33, 37, 41], fundo: [248, 249, 250], tipo: 'padrao' };
+}
+
+function desenharIconeStatus(pdf, status, x, y) {
+    const estilo = obterEstiloStatus(status);
+    const cx = x + 1.6;
+    const cy = y - 1.2;
+    pdf.setFillColor(estilo.fundo[0], estilo.fundo[1], estilo.fundo[2]);
+    pdf.circle(cx, cy, 1.8, 'F');
+    pdf.setDrawColor(estilo.cor[0], estilo.cor[1], estilo.cor[2]);
+    pdf.setLineWidth(0.35);
+    if (estilo.tipo === 'check') {
+        pdf.line(cx - 0.9, cy, cx - 0.2, cy + 0.7);
+        pdf.line(cx - 0.2, cy + 0.7, cx + 1, cy - 0.8);
+    } else if (estilo.tipo === 'x') {
+        pdf.line(cx - 0.8, cy - 0.8, cx + 0.8, cy + 0.8);
+        pdf.line(cx - 0.8, cy + 0.8, cx + 0.8, cy - 0.8);
+    } else if (estilo.tipo === 'alerta') {
+        pdf.line(cx, cy - 0.9, cx, cy + 0.3);
+        pdf.setFillColor(estilo.cor[0], estilo.cor[1], estilo.cor[2]);
+        pdf.circle(cx, cy + 0.9, 0.15, 'F');
+    } else if (estilo.tipo === 'pausa') {
+        pdf.setLineWidth(0.5);
+        pdf.line(cx - 0.5, cy - 0.8, cx - 0.5, cy + 0.8);
+        pdf.line(cx + 0.5, cy - 0.8, cx + 0.5, cy + 0.8);
+    } else if (estilo.tipo === 'engrenagem') {
+        pdf.setFillColor(estilo.cor[0], estilo.cor[1], estilo.cor[2]);
+        pdf.circle(cx, cy, 0.9, 'F');
+        pdf.setFillColor(estilo.fundo[0], estilo.fundo[1], estilo.fundo[2]);
+        pdf.circle(cx, cy, 0.4, 'F');
+    } else {
+        pdf.setFillColor(estilo.cor[0], estilo.cor[1], estilo.cor[2]);
+        pdf.circle(cx, cy, 0.7, 'F');
+    }
+    pdf.setLineWidth(0.2);
+    pdf.setDrawColor(0);
+}
+
 function gerarRelatorioPdfMensal() {
     if (!window.jspdf) {
         alert('Não foi possível carregar o gerador de PDF. Verifique sua conexão e tente novamente.');
@@ -343,8 +492,9 @@ function gerarRelatorioPdfMensal() {
 
     const { jsPDF } = window.jspdf;
     const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
-    const mesesPorPagina = 10;
-    const empresaResponsavel = filterEmpresaResponsavel.value || 'Todas as empresas responsáveis';
+    const mesesPorPagina = 6;
+    const empresasSelecionadas = Array.from(filterEmpresaResponsavelDropdown.getSelecionados());
+    const empresaResponsavel = empresasSelecionadas.length > 0 ? empresasSelecionadas.join(', ') : 'Todas as empresas responsáveis';
     const pendentes = filteredData.filter(row => {
         const status = row[0] ? row[0].toString().replace(/⚠️|✅|⏸️|❌|⚙️|🛑/g, '').trim() : '';
         return !isStatusResolvido(status);
@@ -380,71 +530,103 @@ function gerarRelatorioPdfMensal() {
     for (let inicio = 0; inicio < meses.length; inicio += mesesPorPagina) {
         if (inicio > 0) pdf.addPage();
         const mesesPagina = meses.slice(inicio, inicio + mesesPorPagina);
-        const maiorValor = Math.max(...mesesPagina.flatMap(mes => [mes.pendentes, mes.resolvidas]), 1);
+        const maiorValor = Math.max(...mesesPagina.flatMap(mes => [mes.pendentes, mes.resolvidas, mes.pendentes + mes.resolvidas]), 1);
         const larguraPagina = pdf.internal.pageSize.getWidth();
         const alturaPagina = pdf.internal.pageSize.getHeight();
-        const margemEsquerda = 24;
-        const margemDireita = 16;
-        const topoGrafico = 62;
-        const baseGrafico = alturaPagina - 35;
+        const margemEsquerda = 28;
+        const margemDireita = 20;
+        const topoGrafico = 68;
+        const baseGrafico = alturaPagina - 38;
         const alturaGrafico = baseGrafico - topoGrafico;
         const larguraGrafico = larguraPagina - margemEsquerda - margemDireita;
         const larguraGrupo = larguraGrafico / mesesPagina.length;
-        const larguraBarra = Math.min(12, larguraGrupo * 0.32);
+        const larguraBarra = Math.min(16, larguraGrupo * 0.22);
+        const espacamentoBarra = larguraBarra + 2;
 
         desenharCabecalho(
             'Relatório de Ordens de Serviço de Manutenção Corretiva',
-            'Pendentes e resolvidas agrupadas por mês de emissão'
+            'Totais, resolvidas e pendentes agrupadas por mês de emissão'
         );
 
-        pdf.setFillColor(21, 87, 36);
-        pdf.rect(margemEsquerda, 56, 4, 4, 'F');
-        pdf.text('Resolvidas', margemEsquerda + 6, 59.5);
+        pdf.setFontSize(9);
         pdf.setFillColor(0, 64, 133);
-        pdf.rect(margemEsquerda + 35, 56, 4, 4, 'F');
-        pdf.text('Pendentes', margemEsquerda + 41, 59.5);
+        pdf.rect(margemEsquerda, 56, 4, 4, 'F');
+        pdf.text('Total', margemEsquerda + 6, 59.5);
+        pdf.setFillColor(21, 87, 36);
+        pdf.rect(margemEsquerda + 28, 56, 4, 4, 'F');
+        pdf.text('Resolvidas', margemEsquerda + 34, 59.5);
+        pdf.setFillColor(220, 53, 69);
+        pdf.rect(margemEsquerda + 68, 56, 4, 4, 'F');
+        pdf.text('Pendentes', margemEsquerda + 74, 59.5);
 
-        pdf.setDrawColor(180);
-        pdf.line(margemEsquerda, topoGrafico, margemEsquerda, baseGrafico);
-        pdf.line(margemEsquerda, baseGrafico, larguraPagina - margemDireita, baseGrafico);
-
-        for (let linha = 0; linha <= 4; linha++) {
-            const valor = Math.round((maiorValor * linha) / 4);
-            const y = baseGrafico - (alturaGrafico * linha / 4);
-            pdf.setDrawColor(225);
+        for (let linha = 0; linha <= 5; linha++) {
+            const valor = Math.round((maiorValor * linha) / 5);
+            const y = baseGrafico - (alturaGrafico * linha / 5);
+            pdf.setDrawColor(230);
             pdf.line(margemEsquerda, y, larguraPagina - margemDireita, y);
-            pdf.setTextColor(80);
+            pdf.setFontSize(7.5);
+            pdf.setTextColor(100);
             pdf.text(String(valor), margemEsquerda - 3, y + 1, { align: 'right' });
             pdf.setTextColor(0);
         }
 
-        mesesPagina.forEach((mes, indice) => {
-            const centroGrupo = margemEsquerda + (larguraGrupo * indice) + (larguraGrupo / 2);
-            const alturaPendente = (mes.pendentes / maiorValor) * alturaGrafico;
-            const alturaResolvida = (mes.resolvidas / maiorValor) * alturaGrafico;
-            const xResolvida = centroGrupo - larguraBarra - 1;
-            const xPendente = centroGrupo + 1;
+        pdf.setDrawColor(150);
+        pdf.line(margemEsquerda, topoGrafico, margemEsquerda, baseGrafico);
+        pdf.line(margemEsquerda, baseGrafico, larguraPagina - margemDireita, baseGrafico);
 
+        mesesPagina.forEach((mes, indice) => {
+            const total = mes.pendentes + mes.resolvidas;
+            const centroGrupo = margemEsquerda + (larguraGrupo * indice) + (larguraGrupo / 2);
+            const alturaTotal = (total / maiorValor) * alturaGrafico;
+            const alturaResolvida = (mes.resolvidas / maiorValor) * alturaGrafico;
+            const alturaPendente = (mes.pendentes / maiorValor) * alturaGrafico;
+            const xTotal = centroGrupo - espacamentoBarra * 1.5;
+            const xResolvida = centroGrupo - larguraBarra / 2;
+            const xPendente = centroGrupo + espacamentoBarra * 1.5 - larguraBarra;
+
+            pdf.setFillColor(0, 64, 133);
+            pdf.rect(xTotal, baseGrafico - alturaTotal, larguraBarra, alturaTotal, 'F');
             pdf.setFillColor(21, 87, 36);
             pdf.rect(xResolvida, baseGrafico - alturaResolvida, larguraBarra, alturaResolvida, 'F');
-            pdf.setFillColor(0, 64, 133);
+            pdf.setFillColor(220, 53, 69);
             pdf.rect(xPendente, baseGrafico - alturaPendente, larguraBarra, alturaPendente, 'F');
-            pdf.setFontSize(8);
+
+            pdf.setFontSize(7.5);
+            pdf.setTextColor(0, 64, 133);
+            pdf.text(String(total), xTotal + larguraBarra / 2, baseGrafico - alturaTotal - 2, { align: 'center' });
+            pdf.setTextColor(21, 87, 36);
             pdf.text(String(mes.resolvidas), xResolvida + larguraBarra / 2, baseGrafico - alturaResolvida - 2, { align: 'center' });
+            pdf.setTextColor(220, 53, 69);
             pdf.text(String(mes.pendentes), xPendente + larguraBarra / 2, baseGrafico - alturaPendente - 2, { align: 'center' });
-            pdf.text(formatarMesEmissao(mes), centroGrupo, baseGrafico + 6, { align: 'center' });
+            pdf.setTextColor(0);
+
+            pdf.setFont('helvetica', 'bold');
+            pdf.setFontSize(8.5);
+            pdf.text(formatarMesEmissao(mes), centroGrupo, baseGrafico + 7, { align: 'center' });
+            pdf.setFont('helvetica', 'normal');
         });
     }
 
     const larguraPagina = pdf.internal.pageSize.getWidth();
     const margemEsquerda = 18;
+    const margemDireitaTabela = 12;
+    const colunasFixas = [
+        { titulo: 'Nº OSMC', x: 18, largura: 26 },
+        { titulo: 'Emissão', x: 44, largura: 24 },
+        { titulo: 'Status', x: 68, largura: 38 },
+        { titulo: 'Bloco', x: 106, largura: 20 },
+        { titulo: 'Equipamento', x: 126, largura: 34 }
+    ];
+    const inicioTexto = colunasFixas[colunasFixas.length - 1].x + colunasFixas[colunasFixas.length - 1].largura;
+    const larguraTextoTotal = larguraPagina - margemDireitaTabela - inicioTexto;
+    const larguraDescricao = Math.floor(larguraTextoTotal / 3);
+    const larguraObservacao = Math.floor(larguraTextoTotal / 3);
+    const larguraMotivo = larguraTextoTotal - larguraDescricao - larguraObservacao;
     const colunas = [
-        { titulo: 'Nº OSMC', x: 18, largura: 40 },
-        { titulo: 'Emissão', x: 60, largura: 32 },
-        { titulo: 'Status', x: 94, largura: 48 },
-        { titulo: 'Bloco', x: 144, largura: 27 },
-        { titulo: 'Equipamento', x: 173, largura: 50 },
-        { titulo: 'Descrição do problema', x: 225, largura: larguraPagina - 243 }
+        ...colunasFixas,
+        { titulo: 'Descrição do problema', x: inicioTexto, largura: larguraDescricao },
+        { titulo: 'Observação', x: inicioTexto + larguraDescricao, largura: larguraObservacao },
+        { titulo: 'Motivo', x: inicioTexto + larguraDescricao + larguraObservacao, largura: larguraMotivo }
     ];
     const yCabecalho = 61;
     const alturaLinhaTexto = 3.5;
@@ -475,12 +657,19 @@ function gerarRelatorioPdfMensal() {
     } else {
         pendentes.forEach(row => {
             const descricao = row[8] && row[8] !== '-' ? String(row[8]) : '-';
+            const observacao = row[9] && row[9] !== '-' ? String(row[9]) : '-';
+            const motivo = row[10] && row[10] !== '-' ? String(row[10]) : '-';
             const linhasDescricao = pdf.splitTextToSize(descricao, colunas[5].largura - 2);
+            const linhasObservacao = pdf.splitTextToSize(observacao, colunas[6].largura - 2);
+            const linhasMotivo = pdf.splitTextToSize(motivo, colunas[7].largura - 2);
             const maxLinhasPorBloco = 30;
+            const totalLinhas = Math.max(linhasDescricao.length, linhasObservacao.length, linhasMotivo.length);
 
-            for (let inicioDescricao = 0; inicioDescricao < linhasDescricao.length; inicioDescricao += maxLinhasPorBloco) {
-                const descricaoBloco = linhasDescricao.slice(inicioDescricao, inicioDescricao + maxLinhasPorBloco);
-                const alturaLinha = Math.max(11, descricaoBloco.length * alturaLinhaTexto + 4);
+            for (let inicioBloco = 0; inicioBloco < totalLinhas; inicioBloco += maxLinhasPorBloco) {
+                const descricaoBloco = linhasDescricao.slice(inicioBloco, inicioBloco + maxLinhasPorBloco);
+                const observacaoBloco = linhasObservacao.slice(inicioBloco, inicioBloco + maxLinhasPorBloco);
+                const motivoBloco = linhasMotivo.slice(inicioBloco, inicioBloco + maxLinhasPorBloco);
+                const alturaLinha = Math.max(11, Math.max(descricaoBloco.length, observacaoBloco.length, motivoBloco.length) * alturaLinhaTexto + 4);
                 if (yAtual + alturaLinha > yLimite) iniciarPaginaPendencias();
 
                 if (indiceLinha % 2 === 0) {
@@ -490,14 +679,22 @@ function gerarRelatorioPdfMensal() {
                 pdf.setDrawColor(220);
                 pdf.line(margemEsquerda, yAtual + alturaLinha, larguraPagina - margemEsquerda, yAtual + alturaLinha);
 
-                if (inicioDescricao === 0) {
+                if (inicioBloco === 0) {
                     const valores = [row[2], row[1], row[0], row[4], row[6]];
                     colunas.slice(0, 5).forEach((coluna, colunaIndice) => {
                         const valor = valores[colunaIndice] && valores[colunaIndice] !== '-' ? valores[colunaIndice] : '-';
-                        pdf.text(pdf.splitTextToSize(String(valor), coluna.largura - 2)[0], coluna.x, yAtual + 6.5);
+                        if (colunaIndice === 2) {
+                            const statusLimpo = String(valor).replace(/⚠️|✅|⏸️|❌|⚙️|🛑/g, '').trim();
+                            desenharIconeStatus(pdf, statusLimpo, coluna.x, yAtual + 6.5);
+                            pdf.text(pdf.splitTextToSize(statusLimpo, coluna.largura - 6)[0], coluna.x + 4.5, yAtual + 6.5);
+                        } else {
+                            pdf.text(pdf.splitTextToSize(String(valor), coluna.largura - 2)[0], coluna.x, yAtual + 6.5);
+                        }
                     });
                 }
                 pdf.text(descricaoBloco, colunas[5].x, yAtual + 6.5);
+                pdf.text(observacaoBloco, colunas[6].x, yAtual + 6.5);
+                pdf.text(motivoBloco, colunas[7].x, yAtual + 6.5);
                 yAtual += alturaLinha;
                 indiceLinha++;
             }
@@ -546,8 +743,9 @@ function atualizarDashboards() {
     
     if (osmcChartInstance) {
         osmcChartInstance.data.labels = statusLabels;
-        osmcChartInstance.data.datasets[0].data = statusPorMes.map(mes => mes.pendentes);
+        osmcChartInstance.data.datasets[0].data = statusPorMes.map(mes => mes.pendentes + mes.resolvidas);
         osmcChartInstance.data.datasets[1].data = statusPorMes.map(mes => mes.resolvidas);
+        osmcChartInstance.data.datasets[2].data = statusPorMes.map(mes => mes.pendentes);
         osmcChartInstance.update();
     } else {
         osmcChartInstance = new Chart(ctxStatus, {
@@ -555,8 +753,9 @@ function atualizarDashboards() {
             data: {
                 labels: statusLabels,
                 datasets: [
-                    { label: 'Pendentes', data: statusPorMes.map(mes => mes.pendentes), backgroundColor: '#004085' },
-                    { label: 'Resolvidas', data: statusPorMes.map(mes => mes.resolvidas), backgroundColor: '#155724' }
+                    { label: 'Total', data: statusPorMes.map(mes => mes.pendentes + mes.resolvidas), backgroundColor: '#004085' },
+                    { label: 'Resolvidas', data: statusPorMes.map(mes => mes.resolvidas), backgroundColor: '#155724' },
+                    { label: 'Pendentes', data: statusPorMes.map(mes => mes.pendentes), backgroundColor: '#dc3545' }
                 ]
             },
             options: {
@@ -695,13 +894,18 @@ btnNext.addEventListener('click', () => changePage(1));
 btnJump.addEventListener('click', jumpToPage);
 jumpInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') jumpToPage(); });
 
-filterStatus.addEventListener('change', aplicarFiltrosGerais);
-filterEmpresaResponsavel.addEventListener('change', aplicarFiltrosGerais);
-filterAnoEmissao.addEventListener('change', aplicarFiltrosGerais);
-filterMesEmissao.addEventListener('change', aplicarFiltrosGerais);
+let equipamentoSalaDebounceId = null;
+filterEquipamentoSala.addEventListener('input', () => {
+    clearTimeout(equipamentoSalaDebounceId);
+    equipamentoSalaDebounceId = setTimeout(aplicarFiltrosGerais, 300);
+});
+
+filterAnoEmissao.addEventListener('change', () => {
+    popularFiltrosDinamicos();
+    aplicarFiltrosGerais();
+});
 filterPlanta.addEventListener('change', aplicarFiltrosGerais); 
 filterBloco.addEventListener('change', aplicarFiltrosGerais);
-filterMotivo.addEventListener('change', aplicarFiltrosGerais);
 btnPdfReport.addEventListener('click', gerarRelatorioPdfMensal);
 
 document.addEventListener('DOMContentLoaded', init);

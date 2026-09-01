@@ -3,8 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Painel de Gerenciamento - OSMC Hemobrás</title>
-    <link rel="icon" type="image/png" href="logo_hemo.jpeg">
+    <title>Painel de Indicadores - OSMC Hemobrás</title>
+    <link rel="icon" type="image/png" href="MARCA_HEMOBRÁS_vertical_(1).png">
     <link rel="stylesheet" href="style.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.2/papaparse.min.js"></script>
@@ -16,32 +16,34 @@
     <div class="dashboard-container">
         <header class="top-header">
             <div class="branding">
-                <img src="logo_hemo.jpeg" alt="Logo Hemobrás" class="logo">
+                <img src="MARCA_HEMOBRÁS_vertical_(1).png" alt="Logo Hemobrás" class="logo">
                 <div class="titles">
-                    <h1>Gerenciamento OSMC</h1>
+                    <h1>Indicadores OSMC</h1>
                     <p>Ordens de Serviço de Manutenção Corretiva</p>
                 </div>
             </div>
             <div class="actions">
-                <select id="filterStatus" class="filter-select">
-                    <option value="">Todos os Status</option>
-                </select>
-                <select id="filterEmpresaResponsavel" class="filter-select">
-                    <option value="">Todas as Empresas Responsáveis</option>
-                </select>
+                <input type="text" id="filterEquipamentoSala" class="filter-select filter-search" placeholder="Pesquisar Equipamento ou Sala...">
+                <div class="multi-select" id="filterStatusWrapper">
+                    <button type="button" class="filter-select multi-select-btn" id="filterStatusBtn">Todos os Status</button>
+                    <div class="multi-select-panel" id="filterStatusPanel" hidden></div>
+                </div>
+                <div class="multi-select" id="filterEmpresaResponsavelWrapper">
+                    <button type="button" class="filter-select multi-select-btn" id="filterEmpresaResponsavelBtn">Todas as Empresas Responsáveis</button>
+                    <div class="multi-select-panel" id="filterEmpresaResponsavelPanel" hidden></div>
+                </div>
                 <select id="filterAnoEmissao" class="filter-select">
                     <option value="">Todos os Anos de Emissão</option>
                 </select>
-                <select id="filterMesEmissao" class="filter-select filter-months" multiple size="4" aria-label="Meses de emissão" title="Use Ctrl (Windows) ou Cmd (Mac) para selecionar vários meses">
-                </select>
+                <div class="multi-select" id="filterMesEmissaoWrapper">
+                    <button type="button" class="filter-select multi-select-btn" id="filterMesEmissaoBtn">Todos os Meses de Emissão</button>
+                    <div class="multi-select-panel" id="filterMesEmissaoPanel" hidden></div>
+                </div>
                 <select id="filterPlanta" class="filter-select">
                     <option value="">Todas as Plantas</option>
                 </select>
                 <select id="filterBloco" class="filter-select">
                     <option value="">Todos os Blocos</option>
-                </select>
-                <select id="filterMotivo" class="filter-select">
-                    <option value="">Todos os Motivos</option>
                 </select>
 
                 <button id="btnRefresh" class="btn-refresh">Atualizar Dados</button>
@@ -59,7 +61,7 @@
 
             <div class="charts-grid" id="chartsGrid" style="display: none;">
                 <div class="chart-box">
-                    <h4>Pendentes e Resolvidas por Mês</h4>
+                    <h4>Total, Resolvidas e Pendentes por Mês</h4>
                     <div class="canvas-container"><canvas id="osmcChart"></canvas></div>
                 </div>
                 <div class="chart-box">

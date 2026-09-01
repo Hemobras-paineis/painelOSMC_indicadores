@@ -113,9 +113,87 @@ body {
     width: 220px; /* Barra de pesquisa com tamanho fixo */
 }
 
+.filter-search {
+    width: 220px;
+    cursor: text;
+}
+
 .filter-select:focus, #searchInput:focus {
     border-color: var(--primary-color);
     box-shadow: 0 0 0 3px rgba(138, 21, 27, 0.15);
+}
+
+/* Dropdown com checkboxes (Status, Empresa, Meses) */
+.multi-select {
+    position: relative;
+}
+
+.multi-select-btn {
+    text-align: left;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.multi-select-btn::after {
+    content: '▾';
+    margin-left: 6px;
+    font-size: 10px;
+    color: #888;
+}
+
+.multi-select-panel {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 20;
+    background-color: var(--white);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+    width: 240px;
+    max-height: 260px;
+    overflow-y: auto;
+    padding: 6px 0;
+}
+
+.multi-select-panel-actions {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 10px 8px;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 4px;
+}
+
+.multi-select-panel-actions button {
+    background: none;
+    border: none;
+    color: var(--primary-color);
+    font-size: 12px;
+    cursor: pointer;
+    font-weight: 600;
+    padding: 2px 4px;
+}
+
+.multi-select-panel-actions button:hover {
+    text-decoration: underline;
+}
+
+.multi-select-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.multi-select-option:hover {
+    background-color: var(--hover-bg);
+}
+
+.multi-select-option input[type="checkbox"] {
+    cursor: pointer;
 }
 
 .btn-refresh {
@@ -465,6 +543,14 @@ tbody tr:hover {
     .filter-select, #searchInput, .btn-refresh, .btn-pdf-report {
         width: 100%;
         max-width: 100%;
+    }
+
+    .multi-select, .multi-select-btn {
+        width: 100%;
+    }
+
+    .multi-select-panel {
+        width: 100%;
     }
 
     .filter-months {
