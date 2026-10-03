@@ -23,6 +23,7 @@ const filterPlanta = document.getElementById('filterPlanta');
 const filterBloco = document.getElementById('filterBloco');
 const btnRefresh = document.getElementById('btnRefresh');
 const btnPdfReport = document.getElementById('btnPdfReport');
+const reportType = document.getElementById('reportType');
 
 const loadingState = document.getElementById('loadingState');
 const dashboardSummary = document.getElementById('dashboardSummary'); 
@@ -371,6 +372,30 @@ function getTopNData(dataArray, colIndex, topN) {
     };
 }
 
+function getExecucaoMensalStats(dataArray) {
+    const dadosPorMes = new Map();
+
+    dataArray.forEach(row => {
+        const mesEmissao = getMesEmissao(row[1]);
+        if (!mesEmissao) return;
+
+        if (!dadosPorMes.has(mesEmissao.chave)) {
+            dadosPorMes.set(mesEmissao.chave, { ...mesEmissao, total: 0, resolvidas: 0 });
+        }
+
+        const dadosMes = dadosPorMes.get(mesEmissao.chave);
+        const status = row[0] ? row[0].toString().replace(/⚠️|✅|⏸️|❌|⚙️|🛑/g, '').trim() : '';
+        dadosMes.total++;
+        if (isStatusResolvido(status)) dadosMes.resolvidas++;
+    });
+
+    const meses = Array.from(dadosPorMes.values()).sort((a, b) => a.chave.localeCompare(b.chave));
+    return {
+        labels: meses.map(formatarMesEmissao),
+        data: meses.map(mes => Math.round((mes.resolvidas / mes.total) * 1000) / 10)
+    };
+}
+
 function isStatusResolvido(status) {
     const statusMin = status.toLowerCase();
     return statusMin.includes('aprovado') || statusMin.includes('concluído') ||
@@ -484,9 +509,17 @@ function gerarRelatorioPdfMensal() {
         return;
     }
 
-    const meses = getStatusPorMes(filteredData);
+    const somentePendencias = reportType.value === 'pendencias';
+    const pendentes = filteredData.filter(row => {
+        const status = row[0] ? row[0].toString().replace(/⚠️|✅|⏸️|❌|⚙️|🛑/g, '').trim() : '';
+        return !isStatusResolvido(status);
+    });
+    const registrosRelatorio = somentePendencias ? pendentes : filteredData;
+    const meses = getStatusPorMes(registrosRelatorio);
     if (meses.length === 0) {
-        alert('Não há registros filtrados com data de emissão válida para gerar o relatório.');
+        alert(somentePendencias
+            ? 'Não há pendências com data de emissão válida para gerar o relatório.'
+            : 'Não há registros filtrados com data de emissão válida para gerar o relatório.');
         return;
     }
 
@@ -495,10 +528,9 @@ function gerarRelatorioPdfMensal() {
     const mesesPorPagina = 6;
     const empresasSelecionadas = Array.from(filterEmpresaResponsavelDropdown.getSelecionados());
     const empresaResponsavel = empresasSelecionadas.length > 0 ? empresasSelecionadas.join(', ') : 'Todas as empresas responsáveis';
-    const pendentes = filteredData.filter(row => {
-        const status = row[0] ? row[0].toString().replace(/⚠️|✅|⏸️|❌|⚙️|🛑/g, '').trim() : '';
-        return !isStatusResolvido(status);
-    });
+    const tituloRelatorio = somentePendencias
+        ? 'Relatório de Pendências de Manutenção Corretiva'
+        : 'Relatório Completo de Manutenção Corretiva';
 
     function desenharCabecalho(titulo, subtitulo) {
         const larguraPagina = pdf.internal.pageSize.getWidth();
@@ -544,8 +576,10 @@ function gerarRelatorioPdfMensal() {
         const espacamentoBarra = larguraBarra + 2;
 
         desenharCabecalho(
-            'Relatório de Ordens de Serviço de Manutenção Corretiva',
-            'Totais, resolvidas e pendentes agrupadas por mês de emissão'
+            tituloRelatorio,
+            somentePendencias
+                ? 'Pendências agrupadas por mês de emissão'
+                : 'Totais, resolvidas e pendentes agrupadas por mês de emissão'
         );
 
         pdf.setFontSize(9);
@@ -611,11 +645,12 @@ function gerarRelatorioPdfMensal() {
     const margemEsquerda = 18;
     const margemDireitaTabela = 12;
     const colunasFixas = [
-        { titulo: 'Nº OSMC', x: 18, largura: 26 },
-        { titulo: 'Emissão', x: 44, largura: 24 },
-        { titulo: 'Status', x: 68, largura: 38 },
-        { titulo: 'Bloco', x: 106, largura: 20 },
-        { titulo: 'Equipamento', x: 126, largura: 34 }
+        { titulo: 'Nº OSMC', x: 18, largura: 24 },
+        { titulo: 'Emissão', x: 42, largura: 22 },
+        { titulo: 'Status', x: 64, largura: 34 },
+        { titulo: 'Solicitante', x: 98, largura: 28 },
+        { titulo: 'Bloco', x: 126, largura: 18 },
+        { titulo: 'Equipamento', x: 144, largura: 30 }
     ];
     const inicioTexto = colunasFixas[colunasFixas.length - 1].x + colunasFixas[colunasFixas.length - 1].largura;
     const larguraTextoTotal = larguraPagina - margemDireitaTabela - inicioTexto;
@@ -634,9 +669,12 @@ function gerarRelatorioPdfMensal() {
     let yAtual;
     let indiceLinha = 0;
 
-    function iniciarPaginaPendencias() {
+    function iniciarPaginaRelatorio() {
         pdf.addPage();
-        desenharCabecalho('Lista de Ordens de Serviço Pendentes', `Total de pendências no período: ${pendentes.length}`);
+        desenharCabecalho(
+            somentePendencias ? 'Lista de Ordens de Serviço Pendentes' : 'Lista Completa de Ordens de Serviço',
+            `Total de registros no período: ${registrosRelatorio.length}`
+        );
         pdf.setFillColor(138, 21, 27);
         pdf.rect(margemEsquerda, yCabecalho, larguraPagina - 36, 8, 'F');
         pdf.setFont('helvetica', 'bold');
@@ -650,18 +688,18 @@ function gerarRelatorioPdfMensal() {
         indiceLinha = 0;
     }
 
-    iniciarPaginaPendencias();
-    if (pendentes.length === 0) {
+    iniciarPaginaRelatorio();
+    if (registrosRelatorio.length === 0) {
         pdf.setFontSize(10);
-        pdf.text('Não há ordens de serviço pendentes para os filtros selecionados.', margemEsquerda, 80);
+        pdf.text('Não há registros para os filtros selecionados.', margemEsquerda, 80);
     } else {
-        pendentes.forEach(row => {
+        registrosRelatorio.forEach(row => {
             const descricao = row[8] && row[8] !== '-' ? String(row[8]) : '-';
             const observacao = row[9] && row[9] !== '-' ? String(row[9]) : '-';
             const motivo = row[10] && row[10] !== '-' ? String(row[10]) : '-';
-            const linhasDescricao = pdf.splitTextToSize(descricao, colunas[5].largura - 2);
-            const linhasObservacao = pdf.splitTextToSize(observacao, colunas[6].largura - 2);
-            const linhasMotivo = pdf.splitTextToSize(motivo, colunas[7].largura - 2);
+            const linhasDescricao = pdf.splitTextToSize(descricao, colunas[6].largura - 2);
+            const linhasObservacao = pdf.splitTextToSize(observacao, colunas[7].largura - 2);
+            const linhasMotivo = pdf.splitTextToSize(motivo, colunas[8].largura - 2);
             const maxLinhasPorBloco = 30;
             const totalLinhas = Math.max(linhasDescricao.length, linhasObservacao.length, linhasMotivo.length);
 
@@ -670,7 +708,7 @@ function gerarRelatorioPdfMensal() {
                 const observacaoBloco = linhasObservacao.slice(inicioBloco, inicioBloco + maxLinhasPorBloco);
                 const motivoBloco = linhasMotivo.slice(inicioBloco, inicioBloco + maxLinhasPorBloco);
                 const alturaLinha = Math.max(11, Math.max(descricaoBloco.length, observacaoBloco.length, motivoBloco.length) * alturaLinhaTexto + 4);
-                if (yAtual + alturaLinha > yLimite) iniciarPaginaPendencias();
+                if (yAtual + alturaLinha > yLimite) iniciarPaginaRelatorio();
 
                 if (indiceLinha % 2 === 0) {
                 pdf.setFillColor(248, 241, 242);
@@ -680,8 +718,8 @@ function gerarRelatorioPdfMensal() {
                 pdf.line(margemEsquerda, yAtual + alturaLinha, larguraPagina - margemEsquerda, yAtual + alturaLinha);
 
                 if (inicioBloco === 0) {
-                    const valores = [row[2], row[1], row[0], row[4], row[6]];
-                    colunas.slice(0, 5).forEach((coluna, colunaIndice) => {
+                    const valores = [row[2], row[1], row[0], row[3], row[4], row[6]];
+                    colunas.slice(0, 6).forEach((coluna, colunaIndice) => {
                         const valor = valores[colunaIndice] && valores[colunaIndice] !== '-' ? valores[colunaIndice] : '-';
                         if (colunaIndice === 2) {
                             const statusLimpo = String(valor).replace(/⚠️|✅|⏸️|❌|⚙️|🛑/g, '').trim();
@@ -692,16 +730,16 @@ function gerarRelatorioPdfMensal() {
                         }
                     });
                 }
-                pdf.text(descricaoBloco, colunas[5].x, yAtual + 6.5);
-                pdf.text(observacaoBloco, colunas[6].x, yAtual + 6.5);
-                pdf.text(motivoBloco, colunas[7].x, yAtual + 6.5);
+                pdf.text(descricaoBloco, colunas[6].x, yAtual + 6.5);
+                pdf.text(observacaoBloco, colunas[7].x, yAtual + 6.5);
+                pdf.text(motivoBloco, colunas[8].x, yAtual + 6.5);
                 yAtual += alturaLinha;
                 indiceLinha++;
             }
         });
     }
 
-    pdf.save('relatorio-osmc-mensal.pdf');
+    pdf.save(somentePendencias ? 'relatorio-osmc-pendencias.pdf' : 'relatorio-osmc-completo.pdf');
 }
 
 function atualizarDashboards() {
@@ -767,27 +805,42 @@ function atualizarDashboards() {
         });
     }
 
-    // GRÁFICO 2: Top 5 Blocos (Agora no índice 4)
-    const blocoStats = getTopNData(filteredData, 4, 5);
+    // GRÁFICO 2: Execução mensal para empresas selecionadas; blocos sem seleção
+    const empresasSelecionadas = filterEmpresaResponsavelDropdown.getSelecionados().size > 0;
+    const blocoStats = empresasSelecionadas
+        ? getExecucaoMensalStats(filteredData)
+        : getTopNData(filteredData, 4, 5);
+    const tituloBloco = document.getElementById('blocoChartTitle');
+    tituloBloco.textContent = empresasSelecionadas
+        ? 'Execução Mensal (%) - Empresas Selecionadas'
+        : 'Top 5 Blocos (Total de OSMC)';
+    const rotuloDataset = empresasSelecionadas ? 'Execução mensal (%)' : 'Total de OSMC';
+    const corDataset = empresasSelecionadas ? '#155724' : '#004085';
+    const formatarValorBloco = valor => empresasSelecionadas ? `${valor}%` : valor;
     const ctxBloco = document.getElementById('blocoChart').getContext('2d');
     
     if (blocoChartInstance) {
         blocoChartInstance.data.labels = blocoStats.labels;
         blocoChartInstance.data.datasets[0].data = blocoStats.data;
+        blocoChartInstance.data.datasets[0].label = rotuloDataset;
+        blocoChartInstance.data.datasets[0].backgroundColor = corDataset;
+        blocoChartInstance.options.plugins.datalabels.formatter = formatarValorBloco;
+        blocoChartInstance.options.scales.y.max = empresasSelecionadas ? 100 : undefined;
+        blocoChartInstance.options.scales.y.ticks.callback = formatarValorBloco;
         blocoChartInstance.update();
     } else {
         blocoChartInstance = new Chart(ctxBloco, {
             type: 'bar',
-            data: { labels: blocoStats.labels, datasets: [{ label: 'Qtd de OSMC', data: blocoStats.data, backgroundColor: '#004085' }] },
+            data: { labels: blocoStats.labels, datasets: [{ label: rotuloDataset, data: blocoStats.data, backgroundColor: corDataset }] },
             options: { 
                 responsive: true, 
                 maintainAspectRatio: false, 
                 layout: { padding: { top: 25 } }, 
                 plugins: { 
                     legend: { display: false }, 
-                    datalabels: { color: '#444', anchor: 'end', align: 'end', offset: 4, font: { weight: 'bold', size: 11 } } 
+                    datalabels: { color: '#444', anchor: 'end', align: 'end', offset: 4, font: { weight: 'bold', size: 11 }, formatter: formatarValorBloco } 
                 }, 
-                scales: { y: { beginAtZero: true } } 
+                scales: { y: { beginAtZero: true, max: empresasSelecionadas ? 100 : undefined, ticks: { callback: formatarValorBloco } } } 
             }
         });
     }

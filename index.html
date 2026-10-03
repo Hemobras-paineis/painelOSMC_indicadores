@@ -65,7 +65,7 @@
                     <div class="canvas-container"><canvas id="osmcChart"></canvas></div>
                 </div>
                 <div class="chart-box">
-                    <h4>Top 5 Blocos (Volume de OSMC)</h4>
+                    <h4 id="blocoChartTitle">Top 5 Blocos (Total de OSMC)</h4>
                     <div class="canvas-container"><canvas id="blocoChart"></canvas></div>
                 </div>
                 <div class="chart-box">
@@ -75,7 +75,12 @@
             </div>
 
             <div class="report-container">
-                <button id="btnPdfReport" class="btn-pdf-report">Gerar Relatório PDF Mensal</button>
+                <label for="reportType">Relatório</label>
+                <select id="reportType" class="report-type-select">
+                    <option value="completo">Completo</option>
+                    <option value="pendencias">Somente pendências</option>
+                </select>
+                <button id="btnPdfReport" class="btn-pdf-report">Gerar Relatório PDF</button>
             </div>
 
             <div class="table-toggle-container" id="tableToggleContainer" style="display: none;">

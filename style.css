@@ -215,8 +215,27 @@ body {
 
 .report-container {
     display: flex;
+    align-items: center;
+    gap: 8px;
     justify-content: flex-end;
     margin: -10px 0 20px;
+}
+
+.report-container label {
+    color: var(--text-color);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.report-type-select {
+    min-height: 38px;
+    padding: 0 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    background-color: var(--white);
+    color: var(--text-color);
+    font-family: var(--font-main);
+    font-size: 13px;
 }
 
 .btn-pdf-report {
