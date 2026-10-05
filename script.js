@@ -396,6 +396,32 @@ function getExecucaoMensalStats(dataArray) {
     };
 }
 
+function getExecucaoPorPlantaStats(dataArray) {
+    const dadosPorPlanta = new Map();
+
+    dataArray.forEach(row => {
+        const planta = row[12] ? row[12].toString().trim() : '';
+        if (!planta || planta === '-' || planta.toLowerCase() === 'n/a') return;
+
+        if (!dadosPorPlanta.has(planta)) {
+            dadosPorPlanta.set(planta, { total: 0, resolvidas: 0 });
+        }
+
+        const dados = dadosPorPlanta.get(planta);
+        const status = row[0] ? row[0].toString().replace(/⚠️|✅|⏸️|❌|⚙️|🛑/g, '').trim() : '';
+        dados.total++;
+        if (isStatusResolvido(status)) dados.resolvidas++;
+    });
+
+    const plantas = Array.from(dadosPorPlanta.entries())
+        .sort((a, b) => a[0].localeCompare(b[0]));
+
+    return {
+        labels: plantas.map(([planta]) => planta),
+        data: plantas.map(([, dados]) => Math.round((dados.resolvidas / dados.total) * 1000) / 10)
+    };
+}
+
 function isStatusResolvido(status) {
     const statusMin = status.toLowerCase();
     return statusMin.includes('aprovado') || statusMin.includes('concluído') ||
@@ -845,19 +871,30 @@ function atualizarDashboards() {
         });
     }
 
-    // GRÁFICO 3: Planta (Agora no índice 12)
-    const plantaStats = getTopNData(filteredData, 12, 5); 
+    // GRÁFICO 3: Percentual de execução por planta (índice 12)
+    const plantaStats = getExecucaoPorPlantaStats(filteredData);
+    const formatarValorPlanta = valor => `${valor}%`;
     const ctxPlanta = document.getElementById('plantaChart').getContext('2d');
     
     if (plantaChartInstance) {
         plantaChartInstance.data.labels = plantaStats.labels;
         plantaChartInstance.data.datasets[0].data = plantaStats.data;
+        plantaChartInstance.options.plugins.datalabels.formatter = formatarValorPlanta;
         plantaChartInstance.update();
     } else {
         plantaChartInstance = new Chart(ctxPlanta, {
-            type: 'pie', 
-            data: { labels: plantaStats.labels, datasets: [{ data: plantaStats.data, backgroundColor: coresBase.slice(1), borderWidth: 1 }] },
-            options: { responsive: true, maintainAspectRatio: false, layout: { padding: 25 }, plugins: { legend: { position: 'right', labels: { boxWidth: 10, font: {size: 10} } }, datalabels: { color: '#444444', anchor: 'end', align: 'end', offset: 4, font: { weight: 'bold', size: 11, family: "'Inter', sans-serif" }, formatter: (value, context) => { const total = context.chart.data.datasets[0].data.reduce((sum, item) => sum + item, 0); return value > 0 ? `${(value * 100 / total).toFixed(0)}%` : null; } } } }
+            type: 'bar',
+            data: { labels: plantaStats.labels, datasets: [{ label: 'Execução (%)', data: plantaStats.data, backgroundColor: coresBase.slice(1), borderWidth: 1 }] },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                layout: { padding: { top: 25 } },
+                plugins: {
+                    legend: { display: false },
+                    datalabels: { color: '#444444', anchor: 'end', align: 'end', offset: 4, font: { weight: 'bold', size: 11 }, formatter: formatarValorPlanta }
+                },
+                scales: { y: { beginAtZero: true, max: 100, ticks: { callback: formatarValorPlanta } } }
+            }
         });
     }
 }
