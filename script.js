@@ -3,7 +3,7 @@ const CSV_URL = "https://docs.google.com/spreadsheets/d/1IGkI1foAYcKUYWSF2jknjaq
 // ADICIONADA A COLUNA "Data/hora de Emissão" (Índice 1)
 const COLUNAS_DESEJADAS = [
     "Status", "Data/hora de Emissão", "Número da OSMC", "Solicitante", "Bloco", "Piso",
-    "Equipamento", "Sala", "Descrição do Problema", "Observação", "Motivo", "Data/hora de fechamento", "Planta"
+    "Equipamento", "Sala", "Descrição do Problema", "Observação", "Motivo", "Data/hora de fechamento"
 ];
 
 let allData = [];
@@ -13,13 +13,11 @@ let currentPage = 1;
 
 let osmcChartInstance = null; 
 let blocoChartInstance = null;
-let plantaChartInstance = null; 
 
 let isTableVisible = false;
 
 const filterEquipamentoSala = document.getElementById('filterEquipamentoSala');
 const filterAnoEmissao = document.getElementById('filterAnoEmissao');
-const filterPlanta = document.getElementById('filterPlanta'); 
 const filterBloco = document.getElementById('filterBloco');
 const btnRefresh = document.getElementById('btnRefresh');
 const btnPdfReport = document.getElementById('btnPdfReport');
@@ -152,7 +150,14 @@ class MultiSelectDropdown {
 }
 
 const filterStatusDropdown = new MultiSelectDropdown('filterStatus', 'Todos os Status', () => aplicarFiltrosGerais());
-const filterEmpresaResponsavelDropdown = new MultiSelectDropdown('filterEmpresaResponsavel', 'Todas as Empresas Responsáveis', () => aplicarFiltrosGerais());
+const filterEmpresaResponsavelDropdown = new MultiSelectDropdown(
+    'filterEmpresaResponsavel',
+    'Todas as Empresas Responsáveis',
+    () => {
+        popularFiltrosDinamicos();
+        aplicarFiltrosGerais();
+    }
+);
 const filterMesEmissaoDropdown = new MultiSelectDropdown('filterMesEmissao', 'Todos os Meses de Emissão', () => aplicarFiltrosGerais());
 
 function init() {
@@ -268,10 +273,6 @@ function fetchData(isSilentUpdate = false) {
 function popularFiltrosDinamicos() {
     const statusSet = new Set();
     const empresaResponsavelSet = new Set();
-    const mesesEmissao = new Map();
-    const anosEmissao = new Set();
-    const plantaSet = new Set(); 
-    const blocoSet = new Set();
 
     allData.forEach(row => {
         // Índices remapeados devido à nova coluna Data/hora de Emissão
@@ -279,13 +280,26 @@ function popularFiltrosDinamicos() {
         
         if (cleanStatus !== "-") statusSet.add(cleanStatus); 
         if (row.empresaResponsavel !== "-") empresaResponsavelSet.add(row.empresaResponsavel);
+    });
+
+    filterStatusDropdown.preencher(Array.from(statusSet).sort().map(valor => ({ value: valor, label: valor })));
+    filterEmpresaResponsavelDropdown.preencher(Array.from(empresaResponsavelSet).sort().map(valor => ({ value: valor, label: valor })));
+
+    const empresasSelecionadas = filterEmpresaResponsavelDropdown.getSelecionados();
+    const dadosDasEmpresas = allData.filter(row =>
+        empresasSelecionadas.size === 0 || empresasSelecionadas.has(row.empresaResponsavel)
+    );
+    const mesesEmissao = new Map();
+    const anosEmissao = new Set();
+    const blocoSet = new Set();
+
+    dadosDasEmpresas.forEach(row => {
         const mesEmissao = getMesEmissao(row[1]);
         if (mesEmissao) {
             mesesEmissao.set(mesEmissao.chave, mesEmissao);
             anosEmissao.add(String(mesEmissao.ano));
         }
-        if (row[4] !== "-") blocoSet.add(row[4]); // Bloco agora é 4
-        if (row[12] && row[12] !== "-") plantaSet.add(row[12]); // Planta agora é 12
+        if (row[4] !== "-") blocoSet.add(row[4]);
     });
 
     function preencherSelect(selectElement, valoresSet, ordenar = true) {
@@ -305,13 +319,10 @@ function popularFiltrosDinamicos() {
     }
 
     preencherSelect(filterAnoEmissao, anosEmissao);
-    filterStatusDropdown.preencher(Array.from(statusSet).sort().map(valor => ({ value: valor, label: valor })));
-    filterEmpresaResponsavelDropdown.preencher(Array.from(empresaResponsavelSet).sort().map(valor => ({ value: valor, label: valor })));
     filterMesEmissaoDropdown.preencher(Array.from(mesesEmissao.values())
         .filter(mes => !filterAnoEmissao.value || String(mes.ano) === filterAnoEmissao.value)
         .sort((a, b) => a.chave.localeCompare(b.chave))
         .map(mes => ({ value: mes.chave, label: formatarMesEmissao(mes) })));
-    preencherSelect(filterPlanta, plantaSet); 
     preencherSelect(filterBloco, blocoSet);
 }
 
@@ -320,7 +331,6 @@ function aplicarFiltrosGerais() {
     const empresaResponsavelFiltro = filterEmpresaResponsavelDropdown.getSelecionados();
     const anoEmissaoFiltro = filterAnoEmissao.value;
     const mesesEmissaoFiltro = filterMesEmissaoDropdown.getSelecionados();
-    const plantaFiltro = filterPlanta.value; 
     const blocoFiltro = filterBloco.value;
     const equipamentoSalaFiltro = filterEquipamentoSala.value.trim().toLowerCase();
 
@@ -334,7 +344,6 @@ function aplicarFiltrosGerais() {
         const passouAnoEmissao = !anoEmissaoFiltro || (mesEmissao && String(mesEmissao.ano) === anoEmissaoFiltro);
         const passouMesEmissao = mesesEmissaoFiltro.size === 0 ||
             (mesEmissao && mesesEmissaoFiltro.has(mesEmissao.chave));
-        const passouPlanta = !plantaFiltro || row[12] === plantaFiltro; 
         const passouBloco = !blocoFiltro || row[4] === blocoFiltro;
         const equipamentoVal = row[6] ? row[6].toString().toLowerCase() : '';
         const salaVal = row[7] ? row[7].toString().toLowerCase() : '';
@@ -342,7 +351,7 @@ function aplicarFiltrosGerais() {
             equipamentoVal.includes(equipamentoSalaFiltro) || salaVal.includes(equipamentoSalaFiltro);
 
         return passouStatus && passouEmpresaResponsavel && passouAnoEmissao && passouMesEmissao &&
-            passouPlanta && passouBloco && passouEquipamentoSala;
+            passouBloco && passouEquipamentoSala;
     });
 
     currentPage = 1;
@@ -393,32 +402,6 @@ function getExecucaoMensalStats(dataArray) {
     return {
         labels: meses.map(formatarMesEmissao),
         data: meses.map(mes => Math.round((mes.resolvidas / mes.total) * 1000) / 10)
-    };
-}
-
-function getExecucaoPorPlantaStats(dataArray) {
-    const dadosPorPlanta = new Map();
-
-    dataArray.forEach(row => {
-        const planta = row[12] ? row[12].toString().trim() : '';
-        if (!planta || planta === '-' || planta.toLowerCase() === 'n/a') return;
-
-        if (!dadosPorPlanta.has(planta)) {
-            dadosPorPlanta.set(planta, { total: 0, resolvidas: 0 });
-        }
-
-        const dados = dadosPorPlanta.get(planta);
-        const status = row[0] ? row[0].toString().replace(/⚠️|✅|⏸️|❌|⚙️|🛑/g, '').trim() : '';
-        dados.total++;
-        if (isStatusResolvido(status)) dados.resolvidas++;
-    });
-
-    const plantas = Array.from(dadosPorPlanta.entries())
-        .sort((a, b) => a[0].localeCompare(b[0]));
-
-    return {
-        labels: plantas.map(([planta]) => planta),
-        data: plantas.map(([, dados]) => Math.round((dados.resolvidas / dados.total) * 1000) / 10)
     };
 }
 
@@ -798,9 +781,12 @@ function atualizarDashboards() {
         </div>
     `;
 
-    const coresBase = ['#155724', '#004085', '#d39e00', '#6c757d', '#dc3545', '#17a2b8', '#343a40', '#28a745'];
+    const empresasSelecionadas = Array.from(filterEmpresaResponsavelDropdown.getSelecionados());
+    const sufixoEmpresa = empresasSelecionadas.length ? ` - ${empresasSelecionadas.join(', ')}` : '';
 
     // GRÁFICO 1: Status agrupados por mês de emissão
+    document.getElementById('osmcChartTitle').textContent =
+        `Total, Resolvidas e Pendentes por Mês${sufixoEmpresa}`;
     const statusPorMes = getStatusPorMes(filteredData);
     const statusLabels = statusPorMes.map(formatarMesEmissao);
     const ctxStatus = document.getElementById('osmcChart').getContext('2d');
@@ -832,17 +818,17 @@ function atualizarDashboards() {
     }
 
     // GRÁFICO 2: Execução mensal para empresas selecionadas; blocos sem seleção
-    const empresasSelecionadas = filterEmpresaResponsavelDropdown.getSelecionados().size > 0;
-    const blocoStats = empresasSelecionadas
+    const temEmpresaSelecionada = empresasSelecionadas.length > 0;
+    const blocoStats = temEmpresaSelecionada
         ? getExecucaoMensalStats(filteredData)
         : getTopNData(filteredData, 4, 5);
     const tituloBloco = document.getElementById('blocoChartTitle');
-    tituloBloco.textContent = empresasSelecionadas
-        ? 'Execução Mensal (%) - Empresas Selecionadas'
+    tituloBloco.textContent = temEmpresaSelecionada
+        ? `Execução Mensal (%)${sufixoEmpresa}`
         : 'Top 5 Blocos (Total de OSMC)';
-    const rotuloDataset = empresasSelecionadas ? 'Execução mensal (%)' : 'Total de OSMC';
-    const corDataset = empresasSelecionadas ? '#155724' : '#004085';
-    const formatarValorBloco = valor => empresasSelecionadas ? `${valor}%` : valor;
+    const rotuloDataset = temEmpresaSelecionada ? 'Execução mensal (%)' : 'Total de OSMC';
+    const corDataset = temEmpresaSelecionada ? '#155724' : '#004085';
+    const formatarValorBloco = valor => temEmpresaSelecionada ? `${valor}%` : valor;
     const ctxBloco = document.getElementById('blocoChart').getContext('2d');
     
     if (blocoChartInstance) {
@@ -851,7 +837,7 @@ function atualizarDashboards() {
         blocoChartInstance.data.datasets[0].label = rotuloDataset;
         blocoChartInstance.data.datasets[0].backgroundColor = corDataset;
         blocoChartInstance.options.plugins.datalabels.formatter = formatarValorBloco;
-        blocoChartInstance.options.scales.y.max = empresasSelecionadas ? 100 : undefined;
+        blocoChartInstance.options.scales.y.max = temEmpresaSelecionada ? 100 : undefined;
         blocoChartInstance.options.scales.y.ticks.callback = formatarValorBloco;
         blocoChartInstance.update();
     } else {
@@ -866,37 +852,11 @@ function atualizarDashboards() {
                     legend: { display: false }, 
                     datalabels: { color: '#444', anchor: 'end', align: 'end', offset: 4, font: { weight: 'bold', size: 11 }, formatter: formatarValorBloco } 
                 }, 
-                scales: { y: { beginAtZero: true, max: empresasSelecionadas ? 100 : undefined, ticks: { callback: formatarValorBloco } } } 
+                scales: { y: { beginAtZero: true, max: temEmpresaSelecionada ? 100 : undefined, ticks: { callback: formatarValorBloco } } } 
             }
         });
     }
 
-    // GRÁFICO 3: Percentual de execução por planta (índice 12)
-    const plantaStats = getExecucaoPorPlantaStats(filteredData);
-    const formatarValorPlanta = valor => `${valor}%`;
-    const ctxPlanta = document.getElementById('plantaChart').getContext('2d');
-    
-    if (plantaChartInstance) {
-        plantaChartInstance.data.labels = plantaStats.labels;
-        plantaChartInstance.data.datasets[0].data = plantaStats.data;
-        plantaChartInstance.options.plugins.datalabels.formatter = formatarValorPlanta;
-        plantaChartInstance.update();
-    } else {
-        plantaChartInstance = new Chart(ctxPlanta, {
-            type: 'bar',
-            data: { labels: plantaStats.labels, datasets: [{ label: 'Execução (%)', data: plantaStats.data, backgroundColor: coresBase.slice(1), borderWidth: 1 }] },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                layout: { padding: { top: 25 } },
-                plugins: {
-                    legend: { display: false },
-                    datalabels: { color: '#444444', anchor: 'end', align: 'end', offset: 4, font: { weight: 'bold', size: 11 }, formatter: formatarValorPlanta }
-                },
-                scales: { y: { beginAtZero: true, max: 100, ticks: { callback: formatarValorPlanta } } }
-            }
-        });
-    }
 }
 
 function renderTableHeaders() {
@@ -994,7 +954,6 @@ filterAnoEmissao.addEventListener('change', () => {
     popularFiltrosDinamicos();
     aplicarFiltrosGerais();
 });
-filterPlanta.addEventListener('change', aplicarFiltrosGerais); 
 filterBloco.addEventListener('change', aplicarFiltrosGerais);
 btnPdfReport.addEventListener('click', gerarRelatorioPdfMensal);
 
