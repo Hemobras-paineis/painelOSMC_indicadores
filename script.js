@@ -18,6 +18,32 @@ let isTableVisible = false;
 
 const filterEquipamentoSala = document.getElementById('filterEquipamentoSala');
 const filterAnoEmissao = document.getElementById('filterAnoEmissao');
+const filterPeriodicidade = document.getElementById('filterPeriodicidade');
+const filterDataInicio = document.getElementById('filterDataInicio');
+const filterDataFim = document.getElementById('filterDataFim');
+
+// Converte a data de emissão (dd/mm/aaaa ou aaaa-mm-dd) para aaaa-mm-dd
+function getDataISO(dataEmissao) {
+    if (!dataEmissao || dataEmissao === '-') return null;
+    const br = dataEmissao.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    if (br) return `${br[3]}-${br[2].padStart(2, '0')}-${br[1].padStart(2, '0')}`;
+    const iso = dataEmissao.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (iso) return `${iso[1]}-${iso[2].padStart(2, '0')}-${iso[3].padStart(2, '0')}`;
+    return null;
+}
+
+function dentroDoIntervalo(dataEmissao) {
+    const inicio = filterDataInicio.value;
+    const fim = filterDataFim.value;
+    if (!inicio && !fim) return true;
+    const data = getDataISO(dataEmissao);
+    if (!data) return false;
+    return (!inicio || data >= inicio) && (!fim || data <= fim);
+}
+
+function formatarDataISO(iso) {
+    return iso.split('-').reverse().join('/');
+}
 const btnRefresh = document.getElementById('btnRefresh');
 const btnPdfReport = document.getElementById('btnPdfReport');
 const reportType = document.getElementById('reportType');
@@ -161,7 +187,10 @@ const filterMesEmissaoDropdown = new MultiSelectDropdown('filterMesEmissao', 'To
     popularFiltrosDinamicos();
     aplicarFiltrosGerais();
 });
-const filterSemanaEmissaoDropdown = new MultiSelectDropdown('filterSemanaEmissao', 'Todas as Semanas de Emissão', () => aplicarFiltrosGerais());
+const filterSemanaEmissaoDropdown = new MultiSelectDropdown('filterSemanaEmissao', 'Todas as Semanas de Emissão', () => {
+    popularFiltrosDinamicos();
+    aplicarFiltrosGerais();
+});
 const filterBlocoDropdown = new MultiSelectDropdown('filterBloco', 'Todos os Blocos', () => aplicarFiltrosGerais());
 
 function getRotulosSemanasSelecionadas() {
@@ -169,6 +198,35 @@ function getRotulosSemanasSelecionadas() {
     return filterSemanaEmissaoDropdown.itens
         .filter(semana => semanasSelecionadas.has(semana.value))
         .map(semana => semana.label);
+}
+
+function getRotuloPeriodo() {
+    const partes = [];
+    if (filterAnoEmissao.value) partes.push(filterAnoEmissao.value);
+    const meses = filterMesEmissaoDropdown.itens
+        .filter(m => filterMesEmissaoDropdown.getSelecionados().has(m.value)).map(m => m.label);
+    if (meses.length) partes.push(`Mês(es): ${meses.join(', ')}`);
+    const semanas = getRotulosSemanasSelecionadas();
+    if (semanas.length) partes.push(`${semanas.length === 1 ? 'Semana' : 'Semanas'}: ${semanas.join(', ')}`);
+    const ini = filterDataInicio.value;
+    const fim = filterDataFim.value;
+    if (ini && fim && ini === fim) partes.push(`Dia: ${formatarDataISO(ini)}`);
+    else if (ini || fim) partes.push(`Intervalo: ${ini ? formatarDataISO(ini) : 'início'} a ${fim ? formatarDataISO(fim) : 'hoje'}`);
+    return partes.join(' | ');
+}
+
+function rowNoPeriodo(row) {
+    if (!dentroDoIntervalo(row[1])) return false;
+    const mes = getMesEmissao(row[1]);
+    const meses = filterMesEmissaoDropdown.getSelecionados();
+    const semanas = filterSemanaEmissaoDropdown.getSelecionados();
+    if (filterAnoEmissao.value && (!mes || String(mes.ano) !== filterAnoEmissao.value)) return false;
+    if (meses.size > 0 && (!mes || !meses.has(mes.chave))) return false;
+    if (semanas.size > 0) {
+        const semana = getSemanaEmissao(row[1]);
+        if (!semana || !semanas.has(semana.chave)) return false;
+    }
+    return true;
 }
 
 function init() {
@@ -294,8 +352,6 @@ function popularFiltrosDinamicos() {
     });
 
     filterStatusDropdown.preencher(Array.from(statusSet).sort().map(valor => ({ value: valor, label: valor })));
-    filterEmpresaResponsavelDropdown.preencher(Array.from(empresaResponsavelSet).sort().map(valor => ({ value: valor, label: valor })));
-
     const empresasSelecionadas = filterEmpresaResponsavelDropdown.getSelecionados();
     const dadosDasEmpresas = allData.filter(row =>
         empresasSelecionadas.size === 0 || empresasSelecionadas.has(row.empresaResponsavel)
@@ -310,7 +366,6 @@ function popularFiltrosDinamicos() {
             mesesEmissao.set(mesEmissao.chave, mesEmissao);
             anosEmissao.add(String(mesEmissao.ano));
         }
-        if (row[4] !== "-") blocoSet.add(row[4]);
     });
 
     function preencherSelect(selectElement, valoresSet, ordenar = true) {
@@ -334,8 +389,6 @@ function popularFiltrosDinamicos() {
         .filter(mes => !filterAnoEmissao.value || String(mes.ano) === filterAnoEmissao.value)
         .sort((a, b) => a.chave.localeCompare(b.chave))
         .map(mes => ({ value: mes.chave, label: formatarMesEmissao(mes) })));
-    filterBlocoDropdown.preencher(Array.from(blocoSet).sort().map(valor => ({ value: valor, label: valor })));
-
     const mesesSelecionados = filterMesEmissaoDropdown.getSelecionados();
     const semanas = new Map();
     dadosDasEmpresas.forEach(row => {
@@ -349,6 +402,20 @@ function popularFiltrosDinamicos() {
     filterSemanaEmissaoDropdown.preencher(Array.from(semanas.values())
         .sort((a, b) => a.chave.localeCompare(b.chave))
         .map(semana => ({ value: semana.chave, label: semana.label })));
+
+    // Empresas e blocos exibidos apenas se tiverem OS no período selecionado
+    const linhasPeriodo = allData.filter(rowNoPeriodo);
+    const empresasPeriodo = new Set();
+    linhasPeriodo.forEach(row => {
+        if (row.empresaResponsavel !== "-") empresasPeriodo.add(row.empresaResponsavel);
+    });
+    filterEmpresaResponsavelDropdown.preencher(Array.from(empresasPeriodo).sort().map(valor => ({ value: valor, label: valor })));
+    const empresasAtuais = filterEmpresaResponsavelDropdown.getSelecionados();
+    const blocosPeriodo = new Set();
+    linhasPeriodo.forEach(row => {
+        if ((empresasAtuais.size === 0 || empresasAtuais.has(row.empresaResponsavel)) && row[4] !== "-") blocosPeriodo.add(row[4]);
+    });
+    filterBlocoDropdown.preencher(Array.from(blocosPeriodo).sort().map(valor => ({ value: valor, label: valor })));
 }
 
 // Semana de segunda a domingo, identificada pela data da segunda-feira
@@ -400,7 +467,7 @@ function aplicarFiltrosGerais() {
         const passouEquipamentoSala = !equipamentoSalaFiltro ||
             equipamentoVal.includes(equipamentoSalaFiltro) || salaVal.includes(equipamentoSalaFiltro);
 
-        return passouStatus && passouEmpresaResponsavel && passouAnoEmissao && passouMesEmissao &&
+        return passouStatus && dentroDoIntervalo(row[1]) && passouEmpresaResponsavel && passouAnoEmissao && passouMesEmissao &&
             passouSemana && passouBloco && passouEquipamentoSala;
     });
 
@@ -431,11 +498,55 @@ function getTopNData(dataArray, colIndex, topN) {
     };
 }
 
+const NOMES_PERIODICIDADE = {
+    diario: { adj: 'Diário', agrupador: 'Dia', emissao: 'dia' },
+    semanal: { adj: 'Semanal', agrupador: 'Semana', emissao: 'semana' },
+    quinzenal: { adj: 'Quinzenal', agrupador: 'Quinzena', emissao: 'quinzena' },
+    mensal: { adj: 'Mensal', agrupador: 'Mês', emissao: 'mês' },
+    trimestral: { adj: 'Trimestral', agrupador: 'Trimestre', emissao: 'trimestre' },
+    semestral: { adj: 'Semestral', agrupador: 'Semestre', emissao: 'semestre' }
+};
+
+function getPeriodicidade() {
+    return NOMES_PERIODICIDADE[filterPeriodicidade.value] || NOMES_PERIODICIDADE.mensal;
+}
+
+// Agrupa a data de emissão no período escolhido (diário a semestral)
+function getPeriodoAgrupamento(dataEmissao) {
+    const mes = getMesEmissao(dataEmissao);
+    if (!mes) return null;
+    const tipo = filterPeriodicidade.value;
+    const aa = String(mes.ano).slice(-2);
+    const abrev = formatarMesEmissao(mes);
+    if (tipo === 'semanal') return getSemanaEmissao(dataEmissao);
+    if (tipo === 'diario' || tipo === 'quinzenal') {
+        const m = dataEmissao.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/) || dataEmissao.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+        if (!m) return null;
+        const dia = dataEmissao.includes('/') ? Number(m[1]) : Number(m[3]);
+        const mm = String(mes.mes).padStart(2, '0');
+        if (tipo === 'diario') {
+            const dd = String(dia).padStart(2, '0');
+            return { chave: `${mes.chave}-${dd}`, label: `${dd}/${mm}/${aa}` };
+        }
+        const q = dia <= 15 ? 1 : 2;
+        return { chave: `${mes.chave}-${q}`, label: `${q}ª quinz. ${abrev}` };
+    }
+    if (tipo === 'trimestral') {
+        const t = Math.ceil(mes.mes / 3);
+        return { chave: `${mes.ano}-T${t}`, label: `${t}º tri/${aa}` };
+    }
+    if (tipo === 'semestral') {
+        const s = mes.mes <= 6 ? 1 : 2;
+        return { chave: `${mes.ano}-S${s}`, label: `${s}º sem/${aa}` };
+    }
+    return { chave: mes.chave, label: abrev };
+}
+
 function getExecucaoMensalStats(dataArray) {
     const dadosPorMes = new Map();
 
     dataArray.forEach(row => {
-        const mesEmissao = getMesEmissao(row[1]);
+        const mesEmissao = getPeriodoAgrupamento(row[1]);
         if (!mesEmissao) return;
 
         if (!dadosPorMes.has(mesEmissao.chave)) {
@@ -450,7 +561,7 @@ function getExecucaoMensalStats(dataArray) {
 
     const meses = Array.from(dadosPorMes.values()).sort((a, b) => a.chave.localeCompare(b.chave));
     return {
-        labels: meses.map(formatarMesEmissao),
+        labels: meses.map(mes => mes.label),
         data: meses.map(mes => Math.round((mes.resolvidas / mes.total) * 1000) / 10)
     };
 }
@@ -492,7 +603,7 @@ function getStatusPorMes(data) {
     const dadosPorMes = new Map();
 
     data.forEach(row => {
-        const mesEmissao = getMesEmissao(row[1]);
+        const mesEmissao = getPeriodoAgrupamento(row[1]);
         if (!mesEmissao) return;
 
         if (!dadosPorMes.has(mesEmissao.chave)) {
@@ -616,12 +727,12 @@ function gerarRelatorioPdfMensal() {
         pdf.text(subtitulo, 24, 44);
         pdf.text(`Empresa responsável: ${empresaResponsavel}`, 24, 50);
         let yFinalCabecalho = 53;
-        if (semanasSelecionadas.length > 0) {
-            const textoSemanas = `Semana(s) selecionada(s): ${semanasSelecionadas.join(', ')}`;
-            const linhasSemanas = pdf.splitTextToSize(textoSemanas, larguraPagina - 48);
+        const periodoTexto = getRotuloPeriodo();
+        if (periodoTexto) {
+            const linhasPeriodo = pdf.splitTextToSize(`Período selecionado: ${periodoTexto}`, larguraPagina - 48);
             pdf.setFontSize(8);
-            pdf.text(linhasSemanas, 24, 56);
-            yFinalCabecalho = 56 + linhasSemanas.length * 4;
+            pdf.text(linhasPeriodo, 24, 56);
+            yFinalCabecalho = 56 + linhasPeriodo.length * 4;
         }
         pdf.text(`Emissão: ${new Date().toLocaleDateString('pt-BR')}`, larguraPagina - 16, 28, { align: 'right' });
         pdf.setTextColor(0);
@@ -640,8 +751,8 @@ function gerarRelatorioPdfMensal() {
         const fimCabecalho = desenharCabecalho(
             tituloRelatorio,
             somentePendencias
-                ? 'Pendências agrupadas por mês de emissão'
-                : 'Totais, resolvidas e pendentes agrupadas por mês de emissão'
+                ? `Pendências agrupadas por ${getPeriodicidade().emissao} de emissão`
+                : `Totais, resolvidas e pendentes agrupadas por ${getPeriodicidade().emissao} de emissão`
         );
 
         const yLegenda = fimCabecalho + 5;
@@ -707,7 +818,7 @@ function gerarRelatorioPdfMensal() {
 
             pdf.setFont('helvetica', 'bold');
             pdf.setFontSize(8.5);
-            pdf.text(formatarMesEmissao(mes), centroGrupo, baseGrafico + 7, { align: 'center' });
+            pdf.text(mes.label, centroGrupo, baseGrafico + 7, { align: 'center' });
             pdf.setFont('helvetica', 'normal');
         });
     }
@@ -847,17 +958,14 @@ function atualizarDashboards() {
     const empresasSelecionadas = Array.from(filterEmpresaResponsavelDropdown.getSelecionados());
     const sufixoEmpresa = empresasSelecionadas.length ? ` - ${empresasSelecionadas.join(', ')}` : '';
     const semanasSelecionadas = getRotulosSemanasSelecionadas();
-    const sufixoSemana = semanasSelecionadas.length > 0
-        ? ` - ${semanasSelecionadas.length === 1 ? 'Semana' : 'Semanas'}: ${semanasSelecionadas.join(', ')}`
-        : '';
+    const periodo = getRotuloPeriodo();
+    const sufixoSemana = periodo ? ` - Período: ${periodo}` : '';
 
     // GRÁFICO 1: Status agrupados por mês de emissão
     document.getElementById('osmcChartTitle').textContent =
-        semanasSelecionadas.length > 0
-            ? `Total, Resolvidas e Pendentes por Semana: ${semanasSelecionadas.join(', ')}${sufixoEmpresa}`
-            : `Total, Resolvidas e Pendentes por Mês${sufixoEmpresa}`;
+        `Total, Resolvidas e Pendentes por ${getPeriodicidade().agrupador}${sufixoSemana}${sufixoEmpresa}`;
     const statusPorMes = getStatusPorMes(filteredData);
-    const statusLabels = statusPorMes.map(formatarMesEmissao);
+    const statusLabels = statusPorMes.map(mes => mes.label);
     const ctxStatus = document.getElementById('osmcChart').getContext('2d');
     
     if (osmcChartInstance) {
@@ -893,9 +1001,9 @@ function atualizarDashboards() {
         : getTopNData(filteredData, 4, 5);
     const tituloBloco = document.getElementById('blocoChartTitle');
     tituloBloco.textContent = temEmpresaSelecionada
-        ? `Execução ${semanasSelecionadas.length > 0 ? 'Semanal' : 'Mensal'} (%)${sufixoSemana}${sufixoEmpresa}`
+        ?         `Execução ${getPeriodicidade().adj} (%)${sufixoSemana}${sufixoEmpresa}`
         : `Top 5 Blocos (Total de OSMC)${sufixoSemana}`;
-    const rotuloDataset = temEmpresaSelecionada ? 'Execução mensal (%)' : 'Total de OSMC';
+            const rotuloDataset = temEmpresaSelecionada ? `Execução ${getPeriodicidade().adj.toLowerCase()} (%)` : 'Total de OSMC';
     const corDataset = temEmpresaSelecionada ? '#155724' : '#004085';
     const formatarValorBloco = valor => temEmpresaSelecionada ? `${valor}%` : valor;
     const ctxBloco = document.getElementById('blocoChart').getContext('2d');
@@ -1023,6 +1131,54 @@ filterAnoEmissao.addEventListener('change', () => {
     popularFiltrosDinamicos();
     aplicarFiltrosGerais();
 });
+[filterDataInicio, filterDataFim].forEach(input => input.addEventListener('change', () => {
+    if (filterDataInicio.value && filterDataFim.value && filterDataInicio.value > filterDataFim.value) {
+        if (input === filterDataInicio) filterDataFim.value = filterDataInicio.value;
+        else filterDataInicio.value = filterDataFim.value;
+    }
+    sincronizarTextoData(filterDataInicio);
+    sincronizarTextoData(filterDataFim);
+    popularFiltrosDinamicos();
+    aplicarFiltrosGerais();
+}));
+
+function sincronizarTextoData(inputData) {
+    const texto = document.getElementById(`${inputData.id}Texto`);
+    texto.value = inputData.value ? formatarDataISO(inputData.value) : '';
+}
+
+// Campos de texto dd/mm/aaaa com máscara; o input date oculto guarda o valor ISO e abre o calendário
+[filterDataInicio, filterDataFim].forEach(inputData => {
+    const texto = document.getElementById(`${inputData.id}Texto`);
+    texto.addEventListener('input', () => {
+        const digitos = texto.value.replace(/\D/g, '').slice(0, 8);
+        texto.value = [digitos.slice(0, 2), digitos.slice(2, 4), digitos.slice(4)].filter(Boolean).join('/');
+        let novoValor = null;
+        if (digitos.length === 0) novoValor = '';
+        else if (digitos.length === 8) {
+            const dia = Number(digitos.slice(0, 2));
+            const mes = Number(digitos.slice(2, 4));
+            const ano = Number(digitos.slice(4));
+            const data = new Date(ano, mes - 1, dia);
+            const valida = ano >= 2000 && data.getFullYear() === ano && data.getMonth() === mes - 1 && data.getDate() === dia;
+            texto.classList.toggle('invalid', !valida);
+            if (valida) novoValor = `${ano}-${String(mes).padStart(2, '0')}-${String(dia).padStart(2, '0')}`;
+        }
+        if (digitos.length < 8) texto.classList.remove('invalid');
+        if (novoValor !== null && novoValor !== inputData.value) {
+            inputData.value = novoValor;
+            inputData.dispatchEvent(new Event('change'));
+        }
+    });
+    texto.addEventListener('blur', () => sincronizarTextoData(inputData));
+});
+
+document.querySelectorAll('.btn-calendar').forEach(btn => btn.addEventListener('click', () => {
+    const inputData = document.getElementById(btn.dataset.target);
+    if (inputData.showPicker) inputData.showPicker();
+    else inputData.focus();
+}));
+filterPeriodicidade.addEventListener('change', atualizarDashboards);
 btnPdfReport.addEventListener('click', gerarRelatorioPdfMensal);
 
 document.addEventListener('DOMContentLoaded', init);

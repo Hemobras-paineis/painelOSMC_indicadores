@@ -32,6 +32,28 @@
                     <button type="button" class="filter-select multi-select-btn" id="filterEmpresaResponsavelBtn">Todas as Empresas Responsáveis</button>
                     <div class="multi-select-panel" id="filterEmpresaResponsavelPanel" hidden></div>
                 </div>
+                <div class="date-range-label">De
+                    <span class="date-field">
+                        <input type="text" id="filterDataInicioTexto" class="filter-select" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" autocomplete="off" title="Data de emissão inicial">
+                        <button type="button" class="btn-calendar" data-target="filterDataInicio" title="Abrir calendário">📅</button>
+                        <input type="date" id="filterDataInicio" class="date-native" tabindex="-1" aria-hidden="true">
+                    </span>
+                </div>
+                <div class="date-range-label">Até
+                    <span class="date-field">
+                        <input type="text" id="filterDataFimTexto" class="filter-select" placeholder="dd/mm/aaaa" maxlength="10" inputmode="numeric" autocomplete="off" title="Data de emissão final (use a mesma data para um dia específico)">
+                        <button type="button" class="btn-calendar" data-target="filterDataFim" title="Abrir calendário">📅</button>
+                        <input type="date" id="filterDataFim" class="date-native" tabindex="-1" aria-hidden="true">
+                    </span>
+                </div>
+                <select id="filterPeriodicidade" class="filter-select" title="Agrupar gráficos e relatórios por">
+                    <option value="diario">Período: Diário</option>
+                    <option value="semanal">Período: Semanal</option>
+                    <option value="quinzenal">Período: Quinzenal</option>
+                    <option value="mensal" selected>Período: Mensal</option>
+                    <option value="trimestral">Período: Trimestral</option>
+                    <option value="semestral">Período: Semestral</option>
+                </select>
                 <select id="filterAnoEmissao" class="filter-select">
                     <option value="">Todos os Anos de Emissão</option>
                 </select>

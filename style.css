@@ -99,6 +99,48 @@ body {
     cursor: pointer;
 }
 
+.date-range-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #444;
+    font-size: 0.85rem;
+}
+
+.date-field {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.date-field input[type="text"] {
+    width: 105px;
+    text-align: center;
+}
+
+.date-field input[type="text"].invalid {
+    border-color: #dc3545;
+}
+
+.btn-calendar {
+    border: 1px solid #ccc;
+    background: #fff;
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 6px 8px;
+}
+
+.date-native {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+
 .filter-months {
     height: 100px;
     white-space: normal;
