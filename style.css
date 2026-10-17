@@ -442,11 +442,12 @@ tbody tr:hover {
 }
 
 /* Cores específicas dos Cartões */
-.kpi-card.total { border-left-color: var(--text-color); }
+.kpi-card.total { border-left-color: #004085; }
+.kpi-card.total p { color: #004085; }
 .kpi-card.aprovadas { border-left-color: #155724; }
 .kpi-card.aprovadas p { color: #155724; }
-.kpi-card.pendentes { border-left-color: #004085; }
-.kpi-card.pendentes p { color: #004085; }
+.kpi-card.pendentes { border-left-color: #dc3545; }
+.kpi-card.pendentes p { color: #dc3545; }
 
 .chart-container {
     width: 250px;
@@ -474,14 +475,14 @@ tbody tr:hover {
 
 .charts-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 20px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
     margin-bottom: 25px;
 }
 
 .chart-box {
     background: var(--white);
-    padding: 15px;
+    padding: 20px;
     border-radius: 8px;
     border: 1px solid var(--border-color);
     box-shadow: 0 2px 8px rgba(0,0,0,0.04);
@@ -490,8 +491,8 @@ tbody tr:hover {
 .chart-box h4 {
     text-align: center;
     color: var(--text-color);
-    margin-bottom: 15px;
-    font-size: 13px;
+    margin-bottom: 20px;
+    font-size: 15px;
     text-transform: uppercase;
     font-weight: 700;
     letter-spacing: 0.5px;
@@ -499,7 +500,7 @@ tbody tr:hover {
 
 .canvas-container {
     position: relative;
-    height: 220px;
+    height: 340px;
     width: 100%;
 }
 
@@ -600,6 +601,14 @@ tbody tr:hover {
         width: 100%;
         margin-top: 15px;
         height: 180px; /* Dá um pouco mais de espaço pro gráfico no celular */
+    }
+
+    .chart-box {
+        padding: 15px;
+    }
+
+    .canvas-container {
+        height: 280px;
     }
 
     /* Paginação: Ajuste dos botões para não quebrarem a tela */

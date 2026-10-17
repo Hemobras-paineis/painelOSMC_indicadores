@@ -164,6 +164,13 @@ const filterMesEmissaoDropdown = new MultiSelectDropdown('filterMesEmissao', 'To
 const filterSemanaEmissaoDropdown = new MultiSelectDropdown('filterSemanaEmissao', 'Todas as Semanas de Emissão', () => aplicarFiltrosGerais());
 const filterBlocoDropdown = new MultiSelectDropdown('filterBloco', 'Todos os Blocos', () => aplicarFiltrosGerais());
 
+function getRotulosSemanasSelecionadas() {
+    const semanasSelecionadas = filterSemanaEmissaoDropdown.getSelecionados();
+    return filterSemanaEmissaoDropdown.itens
+        .filter(semana => semanasSelecionadas.has(semana.value))
+        .map(semana => semana.label);
+}
+
 function init() {
     Chart.register(ChartDataLabels);
     fetchData();
@@ -580,6 +587,7 @@ function gerarRelatorioPdfMensal() {
     const mesesPorPagina = 6;
     const empresasSelecionadas = Array.from(filterEmpresaResponsavelDropdown.getSelecionados());
     const empresaResponsavel = empresasSelecionadas.length > 0 ? empresasSelecionadas.join(', ') : 'Todas as empresas responsáveis';
+    const semanasSelecionadas = getRotulosSemanasSelecionadas();
     const tituloRelatorio = somentePendencias
         ? 'Relatório de Pendências de Manutenção Corretiva'
         : 'Relatório Completo de Manutenção Corretiva';
@@ -607,8 +615,17 @@ function gerarRelatorioPdfMensal() {
         pdf.setTextColor(80);
         pdf.text(subtitulo, 24, 44);
         pdf.text(`Empresa responsável: ${empresaResponsavel}`, 24, 50);
+        let yFinalCabecalho = 53;
+        if (semanasSelecionadas.length > 0) {
+            const textoSemanas = `Semana(s) selecionada(s): ${semanasSelecionadas.join(', ')}`;
+            const linhasSemanas = pdf.splitTextToSize(textoSemanas, larguraPagina - 48);
+            pdf.setFontSize(8);
+            pdf.text(linhasSemanas, 24, 56);
+            yFinalCabecalho = 56 + linhasSemanas.length * 4;
+        }
         pdf.text(`Emissão: ${new Date().toLocaleDateString('pt-BR')}`, larguraPagina - 16, 28, { align: 'right' });
         pdf.setTextColor(0);
+        return yFinalCabecalho;
     }
 
     for (let inicio = 0; inicio < meses.length; inicio += mesesPorPagina) {
@@ -619,7 +636,16 @@ function gerarRelatorioPdfMensal() {
         const alturaPagina = pdf.internal.pageSize.getHeight();
         const margemEsquerda = 28;
         const margemDireita = 20;
-        const topoGrafico = 68;
+
+        const fimCabecalho = desenharCabecalho(
+            tituloRelatorio,
+            somentePendencias
+                ? 'Pendências agrupadas por mês de emissão'
+                : 'Totais, resolvidas e pendentes agrupadas por mês de emissão'
+        );
+
+        const yLegenda = fimCabecalho + 5;
+        const topoGrafico = yLegenda + 10;
         const baseGrafico = alturaPagina - 38;
         const alturaGrafico = baseGrafico - topoGrafico;
         const larguraGrafico = larguraPagina - margemEsquerda - margemDireita;
@@ -627,23 +653,16 @@ function gerarRelatorioPdfMensal() {
         const larguraBarra = Math.min(16, larguraGrupo * 0.22);
         const espacamentoBarra = larguraBarra + 2;
 
-        desenharCabecalho(
-            tituloRelatorio,
-            somentePendencias
-                ? 'Pendências agrupadas por mês de emissão'
-                : 'Totais, resolvidas e pendentes agrupadas por mês de emissão'
-        );
-
         pdf.setFontSize(9);
         pdf.setFillColor(0, 64, 133);
-        pdf.rect(margemEsquerda, 56, 4, 4, 'F');
-        pdf.text('Total', margemEsquerda + 6, 59.5);
+        pdf.rect(margemEsquerda, yLegenda - 3.5, 4, 4, 'F');
+        pdf.text('Total', margemEsquerda + 6, yLegenda);
         pdf.setFillColor(21, 87, 36);
-        pdf.rect(margemEsquerda + 28, 56, 4, 4, 'F');
-        pdf.text('Resolvidas', margemEsquerda + 34, 59.5);
+        pdf.rect(margemEsquerda + 28, yLegenda - 3.5, 4, 4, 'F');
+        pdf.text('Resolvidas', margemEsquerda + 34, yLegenda);
         pdf.setFillColor(220, 53, 69);
-        pdf.rect(margemEsquerda + 68, 56, 4, 4, 'F');
-        pdf.text('Pendentes', margemEsquerda + 74, 59.5);
+        pdf.rect(margemEsquerda + 68, yLegenda - 3.5, 4, 4, 'F');
+        pdf.text('Pendentes', margemEsquerda + 74, yLegenda);
 
         for (let linha = 0; linha <= 5; linha++) {
             const valor = Math.round((maiorValor * linha) / 5);
@@ -715,7 +734,7 @@ function gerarRelatorioPdfMensal() {
         { titulo: 'Observação', x: inicioTexto + larguraDescricao, largura: larguraObservacao },
         { titulo: 'Motivo', x: inicioTexto + larguraDescricao + larguraObservacao, largura: larguraMotivo }
     ];
-    const yCabecalho = 61;
+    let yCabecalho;
     const alturaLinhaTexto = 3.5;
     const yLimite = pdf.internal.pageSize.getHeight() - 15;
     let yAtual;
@@ -723,10 +742,11 @@ function gerarRelatorioPdfMensal() {
 
     function iniciarPaginaRelatorio() {
         pdf.addPage();
-        desenharCabecalho(
+        const fimCabecalho = desenharCabecalho(
             somentePendencias ? 'Lista de Ordens de Serviço Pendentes' : 'Lista Completa de Ordens de Serviço',
             `Total de registros no período: ${registrosRelatorio.length}`
         );
+        yCabecalho = fimCabecalho + 8;
         pdf.setFillColor(138, 21, 27);
         pdf.rect(margemEsquerda, yCabecalho, larguraPagina - 36, 8, 'F');
         pdf.setFont('helvetica', 'bold');
@@ -810,26 +830,32 @@ function atualizarDashboards() {
     });
 
     kpiCardsContainer.innerHTML = `
-        <div class="kpi-card" style="border-left-color: var(--primary-color);">
+        <div class="kpi-card total">
             <h3>Total Filtrado</h3>
-            <p style="color: var(--primary-color)">${filteredData.length}</p>
+            <p>${filteredData.length}</p>
         </div>
-        <div class="kpi-card" style="border-left-color: #155724;">
+        <div class="kpi-card aprovadas">
             <h3>O.S Resolvidas</h3>
-            <p style="color: #155724">${resolvidas}</p>
+            <p>${resolvidas}</p>
         </div>
-        <div class="kpi-card" style="border-left-color: #004085;">
-            <h3>O.S Pendentes / Outros</h3>
-            <p style="color: #004085">${pendentes}</p>
+        <div class="kpi-card pendentes">
+            <h3>Backlog (Pendentes)</h3>
+            <p>${pendentes}</p>
         </div>
     `;
 
     const empresasSelecionadas = Array.from(filterEmpresaResponsavelDropdown.getSelecionados());
     const sufixoEmpresa = empresasSelecionadas.length ? ` - ${empresasSelecionadas.join(', ')}` : '';
+    const semanasSelecionadas = getRotulosSemanasSelecionadas();
+    const sufixoSemana = semanasSelecionadas.length > 0
+        ? ` - ${semanasSelecionadas.length === 1 ? 'Semana' : 'Semanas'}: ${semanasSelecionadas.join(', ')}`
+        : '';
 
     // GRÁFICO 1: Status agrupados por mês de emissão
     document.getElementById('osmcChartTitle').textContent =
-        `Total, Resolvidas e Pendentes por Mês${sufixoEmpresa}`;
+        semanasSelecionadas.length > 0
+            ? `Total, Resolvidas e Pendentes por Semana: ${semanasSelecionadas.join(', ')}${sufixoEmpresa}`
+            : `Total, Resolvidas e Pendentes por Mês${sufixoEmpresa}`;
     const statusPorMes = getStatusPorMes(filteredData);
     const statusLabels = statusPorMes.map(formatarMesEmissao);
     const ctxStatus = document.getElementById('osmcChart').getContext('2d');
@@ -867,8 +893,8 @@ function atualizarDashboards() {
         : getTopNData(filteredData, 4, 5);
     const tituloBloco = document.getElementById('blocoChartTitle');
     tituloBloco.textContent = temEmpresaSelecionada
-        ? `Execução Mensal (%)${sufixoEmpresa}`
-        : 'Top 5 Blocos (Total de OSMC)';
+        ? `Execução ${semanasSelecionadas.length > 0 ? 'Semanal' : 'Mensal'} (%)${sufixoSemana}${sufixoEmpresa}`
+        : `Top 5 Blocos (Total de OSMC)${sufixoSemana}`;
     const rotuloDataset = temEmpresaSelecionada ? 'Execução mensal (%)' : 'Total de OSMC';
     const corDataset = temEmpresaSelecionada ? '#155724' : '#004085';
     const formatarValorBloco = valor => temEmpresaSelecionada ? `${valor}%` : valor;
