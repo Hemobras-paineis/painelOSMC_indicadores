@@ -18,7 +18,6 @@ let isTableVisible = false;
 
 const filterEquipamentoSala = document.getElementById('filterEquipamentoSala');
 const filterAnoEmissao = document.getElementById('filterAnoEmissao');
-const filterBloco = document.getElementById('filterBloco');
 const btnRefresh = document.getElementById('btnRefresh');
 const btnPdfReport = document.getElementById('btnPdfReport');
 const reportType = document.getElementById('reportType');
@@ -158,7 +157,12 @@ const filterEmpresaResponsavelDropdown = new MultiSelectDropdown(
         aplicarFiltrosGerais();
     }
 );
-const filterMesEmissaoDropdown = new MultiSelectDropdown('filterMesEmissao', 'Todos os Meses de Emissão', () => aplicarFiltrosGerais());
+const filterMesEmissaoDropdown = new MultiSelectDropdown('filterMesEmissao', 'Todos os Meses de Emissão', () => {
+    popularFiltrosDinamicos();
+    aplicarFiltrosGerais();
+});
+const filterSemanaEmissaoDropdown = new MultiSelectDropdown('filterSemanaEmissao', 'Todas as Semanas de Emissão', () => aplicarFiltrosGerais());
+const filterBlocoDropdown = new MultiSelectDropdown('filterBloco', 'Todos os Blocos', () => aplicarFiltrosGerais());
 
 function init() {
     Chart.register(ChartDataLabels);
@@ -323,7 +327,43 @@ function popularFiltrosDinamicos() {
         .filter(mes => !filterAnoEmissao.value || String(mes.ano) === filterAnoEmissao.value)
         .sort((a, b) => a.chave.localeCompare(b.chave))
         .map(mes => ({ value: mes.chave, label: formatarMesEmissao(mes) })));
-    preencherSelect(filterBloco, blocoSet);
+    filterBlocoDropdown.preencher(Array.from(blocoSet).sort().map(valor => ({ value: valor, label: valor })));
+
+    const mesesSelecionados = filterMesEmissaoDropdown.getSelecionados();
+    const semanas = new Map();
+    dadosDasEmpresas.forEach(row => {
+        const mesEmissao = getMesEmissao(row[1]);
+        if (!mesEmissao) return;
+        if (filterAnoEmissao.value && String(mesEmissao.ano) !== filterAnoEmissao.value) return;
+        if (mesesSelecionados.size > 0 && !mesesSelecionados.has(mesEmissao.chave)) return;
+        const semana = getSemanaEmissao(row[1]);
+        if (semana) semanas.set(semana.chave, semana);
+    });
+    filterSemanaEmissaoDropdown.preencher(Array.from(semanas.values())
+        .sort((a, b) => a.chave.localeCompare(b.chave))
+        .map(semana => ({ value: semana.chave, label: semana.label })));
+}
+
+// Semana de segunda a domingo, identificada pela data da segunda-feira
+function getSemanaEmissao(dataEmissao) {
+    if (!dataEmissao || dataEmissao === '-') return null;
+    const br = dataEmissao.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    const iso = dataEmissao.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    let ano, mes, dia;
+    if (br) { dia = Number(br[1]); mes = Number(br[2]); ano = Number(br[3]); }
+    else if (iso) { ano = Number(iso[1]); mes = Number(iso[2]); dia = Number(iso[3]); }
+    else return null;
+
+    const data = new Date(ano, mes - 1, dia);
+    if (isNaN(data) || data.getMonth() !== mes - 1) return null;
+    const inicio = new Date(data);
+    inicio.setDate(data.getDate() - ((data.getDay() + 6) % 7));
+    const fim = new Date(inicio);
+    fim.setDate(inicio.getDate() + 6);
+
+    const dm = d => `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`;
+    const chave = `${inicio.getFullYear()}-${String(inicio.getMonth() + 1).padStart(2, '0')}-${String(inicio.getDate()).padStart(2, '0')}`;
+    return { chave, label: `${dm(inicio)} a ${dm(fim)}/${String(fim.getFullYear()).slice(-2)}` };
 }
 
 function aplicarFiltrosGerais() {
@@ -331,7 +371,8 @@ function aplicarFiltrosGerais() {
     const empresaResponsavelFiltro = filterEmpresaResponsavelDropdown.getSelecionados();
     const anoEmissaoFiltro = filterAnoEmissao.value;
     const mesesEmissaoFiltro = filterMesEmissaoDropdown.getSelecionados();
-    const blocoFiltro = filterBloco.value;
+    const blocosFiltro = filterBlocoDropdown.getSelecionados();
+    const semanasFiltro = filterSemanaEmissaoDropdown.getSelecionados();
     const equipamentoSalaFiltro = filterEquipamentoSala.value.trim().toLowerCase();
 
     filteredData = allData.filter(row => {
@@ -344,14 +385,16 @@ function aplicarFiltrosGerais() {
         const passouAnoEmissao = !anoEmissaoFiltro || (mesEmissao && String(mesEmissao.ano) === anoEmissaoFiltro);
         const passouMesEmissao = mesesEmissaoFiltro.size === 0 ||
             (mesEmissao && mesesEmissaoFiltro.has(mesEmissao.chave));
-        const passouBloco = !blocoFiltro || row[4] === blocoFiltro;
+        const passouBloco = blocosFiltro.size === 0 || blocosFiltro.has(row[4]);
+        const semanaEmissao = semanasFiltro.size > 0 ? getSemanaEmissao(row[1]) : null;
+        const passouSemana = semanasFiltro.size === 0 || (semanaEmissao && semanasFiltro.has(semanaEmissao.chave));
         const equipamentoVal = row[6] ? row[6].toString().toLowerCase() : '';
         const salaVal = row[7] ? row[7].toString().toLowerCase() : '';
         const passouEquipamentoSala = !equipamentoSalaFiltro ||
             equipamentoVal.includes(equipamentoSalaFiltro) || salaVal.includes(equipamentoSalaFiltro);
 
         return passouStatus && passouEmpresaResponsavel && passouAnoEmissao && passouMesEmissao &&
-            passouBloco && passouEquipamentoSala;
+            passouSemana && passouBloco && passouEquipamentoSala;
     });
 
     currentPage = 1;
@@ -954,7 +997,6 @@ filterAnoEmissao.addEventListener('change', () => {
     popularFiltrosDinamicos();
     aplicarFiltrosGerais();
 });
-filterBloco.addEventListener('change', aplicarFiltrosGerais);
 btnPdfReport.addEventListener('click', gerarRelatorioPdfMensal);
 
 document.addEventListener('DOMContentLoaded', init);
