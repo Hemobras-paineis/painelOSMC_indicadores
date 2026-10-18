@@ -3,8 +3,10 @@ const CSV_URL = "https://docs.google.com/spreadsheets/d/1IGkI1foAYcKUYWSF2jknjaq
 // ADICIONADA A COLUNA "Data/hora de Emissão" (Índice 1)
 const COLUNAS_DESEJADAS = [
     "Status", "Data/hora de Emissão", "Número da OSMC", "Solicitante", "Bloco", "Piso",
-    "Equipamento", "Sala", "Descrição do Problema", "Observação", "Motivo", "Data/hora de fechamento"
+    "Equipamento", "Sala", "Descrição do Problema", "Observação", "Motivo", "Data/hora de fechamento",
+    "Empresa Responsável", "Disciplina", "Sistema", "TAG"
 ];
+const INDICES_COLUNAS_TABELA = [0, 1, 2, 3, 4, 12, 13, 14, 5, 6, 15, 7, 8, 9, 10, 11];
 
 let allData = [];
 let filteredData = [];
@@ -17,7 +19,7 @@ let blocoChartInstance = null;
 let isTableVisible = false;
 
 const filterEquipamentoSala = document.getElementById('filterEquipamentoSala');
-const filterAnoEmissao = document.getElementById('filterAnoEmissao');
+const equipmentMetricsContainer = document.getElementById('equipmentMetricsContainer');
 const filterPeriodicidade = document.getElementById('filterPeriodicidade');
 const filterDataInicio = document.getElementById('filterDataInicio');
 const filterDataFim = document.getElementById('filterDataFim');
@@ -183,31 +185,37 @@ const filterEmpresaResponsavelDropdown = new MultiSelectDropdown(
         aplicarFiltrosGerais();
     }
 );
-const filterMesEmissaoDropdown = new MultiSelectDropdown('filterMesEmissao', 'Todos os Meses de Emissão', () => {
+const filterAnoEmissaoDropdown = new MultiSelectDropdown('filterAnoEmissao', 'Todos os Anos de Emissão', () => {
     popularFiltrosDinamicos();
     aplicarFiltrosGerais();
 });
-const filterSemanaEmissaoDropdown = new MultiSelectDropdown('filterSemanaEmissao', 'Todas as Semanas de Emissão', () => {
+const filterDisciplinaDropdown = new MultiSelectDropdown('filterDisciplina', 'Todas as Disciplinas', () => {
+    popularFiltrosDinamicos();
+    aplicarFiltrosGerais();
+});
+const filterSistemaDropdown = new MultiSelectDropdown('filterSistema', 'Todos os Sistemas', () => aplicarFiltrosGerais());
+const filterPeriodoEmissaoDropdown = new MultiSelectDropdown('filterPeriodoEmissao', 'Todos os Períodos de Emissão', () => {
     popularFiltrosDinamicos();
     aplicarFiltrosGerais();
 });
 const filterBlocoDropdown = new MultiSelectDropdown('filterBloco', 'Todos os Blocos', () => aplicarFiltrosGerais());
 
-function getRotulosSemanasSelecionadas() {
-    const semanasSelecionadas = filterSemanaEmissaoDropdown.getSelecionados();
-    return filterSemanaEmissaoDropdown.itens
-        .filter(semana => semanasSelecionadas.has(semana.value))
-        .map(semana => semana.label);
+function getRotulosPeriodosSelecionados() {
+    const periodosSelecionados = filterPeriodoEmissaoDropdown.getSelecionados();
+    return filterPeriodoEmissaoDropdown.itens
+        .filter(periodo => periodosSelecionados.has(periodo.value))
+        .map(periodo => periodo.label);
 }
 
 function getRotuloPeriodo() {
     const partes = [];
-    if (filterAnoEmissao.value) partes.push(filterAnoEmissao.value);
-    const meses = filterMesEmissaoDropdown.itens
-        .filter(m => filterMesEmissaoDropdown.getSelecionados().has(m.value)).map(m => m.label);
-    if (meses.length) partes.push(`Mês(es): ${meses.join(', ')}`);
-    const semanas = getRotulosSemanasSelecionadas();
-    if (semanas.length) partes.push(`${semanas.length === 1 ? 'Semana' : 'Semanas'}: ${semanas.join(', ')}`);
+    const anos = Array.from(filterAnoEmissaoDropdown.getSelecionados()).sort();
+    if (anos.length) partes.push(anos.join(', '));
+    const periodos = getRotulosPeriodosSelecionados();
+    if (periodos.length) {
+        const periodicidade = getPeriodicidade();
+        partes.push(`${periodos.length === 1 ? periodicidade.agrupador : periodicidade.agrupadores}: ${periodos.join(', ')}`);
+    }
     const ini = filterDataInicio.value;
     const fim = filterDataFim.value;
     if (ini && fim && ini === fim) partes.push(`Dia: ${formatarDataISO(ini)}`);
@@ -218,13 +226,12 @@ function getRotuloPeriodo() {
 function rowNoPeriodo(row) {
     if (!dentroDoIntervalo(row[1])) return false;
     const mes = getMesEmissao(row[1]);
-    const meses = filterMesEmissaoDropdown.getSelecionados();
-    const semanas = filterSemanaEmissaoDropdown.getSelecionados();
-    if (filterAnoEmissao.value && (!mes || String(mes.ano) !== filterAnoEmissao.value)) return false;
-    if (meses.size > 0 && (!mes || !meses.has(mes.chave))) return false;
-    if (semanas.size > 0) {
-        const semana = getSemanaEmissao(row[1]);
-        if (!semana || !semanas.has(semana.chave)) return false;
+    const periodos = filterPeriodoEmissaoDropdown.getSelecionados();
+    const anos = filterAnoEmissaoDropdown.getSelecionados();
+    if (anos.size > 0 && (!mes || !anos.has(String(mes.ano)))) return false;
+    if (periodos.size > 0) {
+        const periodo = getPeriodoAgrupamento(row[1]);
+        if (!periodo || !periodos.has(periodo.chave)) return false;
     }
     return true;
 }
@@ -296,6 +303,9 @@ function fetchData(isSilentUpdate = false) {
             if (empresaResponsavelIdx === -1) {
                 empresaResponsavelIdx = headerRow.findIndex(h => h && h.trim().toLowerCase().includes('empresa'));
             }
+            const buscarColuna = nome => headerRow.findIndex(h => h && h.trim().toLowerCase() === nome);
+            const disciplinaIdx = buscarColuna('disciplina');
+            const sistemaIdx = buscarColuna('sistema');
             // O Índice da OSMC agora precisa ser procurado dinamicamente para não falhar a validação do ano
             const osmcIdx = colIndices[2];   
             
@@ -320,6 +330,8 @@ function fetchData(isSilentUpdate = false) {
                     });
                     newRow.empresaResponsavel = empresaResponsavelIdx !== -1 && row[empresaResponsavelIdx] ?
                         row[empresaResponsavelIdx].toString().trim() : "-";
+                    newRow.disciplina = disciplinaIdx !== -1 && row[disciplinaIdx] ? row[disciplinaIdx].toString().trim() : "-";
+                    newRow.sistema = sistemaIdx !== -1 && row[sistemaIdx] ? row[sistemaIdx].toString().trim() : "-";
                     allData.push(newRow);
                 }
             }
@@ -356,52 +368,28 @@ function popularFiltrosDinamicos() {
     const dadosDasEmpresas = allData.filter(row =>
         empresasSelecionadas.size === 0 || empresasSelecionadas.has(row.empresaResponsavel)
     );
-    const mesesEmissao = new Map();
     const anosEmissao = new Set();
-    const blocoSet = new Set();
 
     dadosDasEmpresas.forEach(row => {
         const mesEmissao = getMesEmissao(row[1]);
         if (mesEmissao) {
-            mesesEmissao.set(mesEmissao.chave, mesEmissao);
             anosEmissao.add(String(mesEmissao.ano));
         }
     });
 
-    function preencherSelect(selectElement, valoresSet, ordenar = true) {
-        const valorAtual = selectElement.value;
-        const textoPadrao = selectElement.options[0].text;
-        selectElement.innerHTML = `<option value="">${textoPadrao}</option>`;
-        
-        const valores = Array.from(valoresSet);
-        if (ordenar) valores.sort();
-        valores.forEach(valor => {
-            const option = document.createElement('option');
-            option.value = valor;
-            option.textContent = valor;
-            if (valor === valorAtual) option.selected = true; 
-            selectElement.appendChild(option);
-        });
-    }
-
-    preencherSelect(filterAnoEmissao, anosEmissao);
-    filterMesEmissaoDropdown.preencher(Array.from(mesesEmissao.values())
-        .filter(mes => !filterAnoEmissao.value || String(mes.ano) === filterAnoEmissao.value)
-        .sort((a, b) => a.chave.localeCompare(b.chave))
-        .map(mes => ({ value: mes.chave, label: formatarMesEmissao(mes) })));
-    const mesesSelecionados = filterMesEmissaoDropdown.getSelecionados();
-    const semanas = new Map();
+    filterAnoEmissaoDropdown.preencher(Array.from(anosEmissao).sort().map(valor => ({ value: valor, label: valor })));
+    const anosSelecionados = filterAnoEmissaoDropdown.getSelecionados();
+    const periodos = new Map();
     dadosDasEmpresas.forEach(row => {
         const mesEmissao = getMesEmissao(row[1]);
         if (!mesEmissao) return;
-        if (filterAnoEmissao.value && String(mesEmissao.ano) !== filterAnoEmissao.value) return;
-        if (mesesSelecionados.size > 0 && !mesesSelecionados.has(mesEmissao.chave)) return;
-        const semana = getSemanaEmissao(row[1]);
-        if (semana) semanas.set(semana.chave, semana);
+        if (anosSelecionados.size > 0 && !anosSelecionados.has(String(mesEmissao.ano))) return;
+        const periodo = getPeriodoAgrupamento(row[1]);
+        if (periodo) periodos.set(periodo.chave, periodo);
     });
-    filterSemanaEmissaoDropdown.preencher(Array.from(semanas.values())
+    filterPeriodoEmissaoDropdown.preencher(Array.from(periodos.values())
         .sort((a, b) => a.chave.localeCompare(b.chave))
-        .map(semana => ({ value: semana.chave, label: semana.label })));
+        .map(periodo => ({ value: periodo.chave, label: periodo.label })));
 
     // Empresas e blocos exibidos apenas se tiverem OS no período selecionado
     const linhasPeriodo = allData.filter(rowNoPeriodo);
@@ -416,6 +404,19 @@ function popularFiltrosDinamicos() {
         if ((empresasAtuais.size === 0 || empresasAtuais.has(row.empresaResponsavel)) && row[4] !== "-") blocosPeriodo.add(row[4]);
     });
     filterBlocoDropdown.preencher(Array.from(blocosPeriodo).sort().map(valor => ({ value: valor, label: valor })));
+
+    const linhasEmpresa = linhasPeriodo.filter(row => empresasAtuais.size === 0 || empresasAtuais.has(row.empresaResponsavel));
+    const disciplinasPeriodo = new Set();
+    linhasEmpresa.forEach(row => {
+        if (row.disciplina !== "-") disciplinasPeriodo.add(row.disciplina);
+    });
+    filterDisciplinaDropdown.preencher(Array.from(disciplinasPeriodo).sort().map(valor => ({ value: valor, label: valor })));
+    const disciplinasAtuais = filterDisciplinaDropdown.getSelecionados();
+    const sistemasPeriodo = new Set();
+    linhasEmpresa.forEach(row => {
+        if ((disciplinasAtuais.size === 0 || disciplinasAtuais.has(row.disciplina)) && row.sistema !== "-") sistemasPeriodo.add(row.sistema);
+    });
+    filterSistemaDropdown.preencher(Array.from(sistemasPeriodo).sort().map(valor => ({ value: valor, label: valor })));
 }
 
 // Semana de segunda a domingo, identificada pela data da segunda-feira
@@ -443,10 +444,11 @@ function getSemanaEmissao(dataEmissao) {
 function aplicarFiltrosGerais() {
     const statusFiltro = filterStatusDropdown.getSelecionados();
     const empresaResponsavelFiltro = filterEmpresaResponsavelDropdown.getSelecionados();
-    const anoEmissaoFiltro = filterAnoEmissao.value;
-    const mesesEmissaoFiltro = filterMesEmissaoDropdown.getSelecionados();
+    const anosEmissaoFiltro = filterAnoEmissaoDropdown.getSelecionados();
+    const disciplinasFiltro = filterDisciplinaDropdown.getSelecionados();
+    const sistemasFiltro = filterSistemaDropdown.getSelecionados();
     const blocosFiltro = filterBlocoDropdown.getSelecionados();
-    const semanasFiltro = filterSemanaEmissaoDropdown.getSelecionados();
+    const periodosFiltro = filterPeriodoEmissaoDropdown.getSelecionados();
     const equipamentoSalaFiltro = filterEquipamentoSala.value.trim().toLowerCase();
 
     filteredData = allData.filter(row => {
@@ -456,26 +458,29 @@ function aplicarFiltrosGerais() {
         const passouEmpresaResponsavel = empresaResponsavelFiltro.size === 0 ||
             empresaResponsavelFiltro.has(row.empresaResponsavel);
         const mesEmissao = getMesEmissao(row[1]);
-        const passouAnoEmissao = !anoEmissaoFiltro || (mesEmissao && String(mesEmissao.ano) === anoEmissaoFiltro);
-        const passouMesEmissao = mesesEmissaoFiltro.size === 0 ||
-            (mesEmissao && mesesEmissaoFiltro.has(mesEmissao.chave));
+        const passouAnoEmissao = anosEmissaoFiltro.size === 0 || (mesEmissao && anosEmissaoFiltro.has(String(mesEmissao.ano)));
+        const passouDisciplina = disciplinasFiltro.size === 0 || disciplinasFiltro.has(row.disciplina);
+        const passouSistema = sistemasFiltro.size === 0 || sistemasFiltro.has(row.sistema);
         const passouBloco = blocosFiltro.size === 0 || blocosFiltro.has(row[4]);
-        const semanaEmissao = semanasFiltro.size > 0 ? getSemanaEmissao(row[1]) : null;
-        const passouSemana = semanasFiltro.size === 0 || (semanaEmissao && semanasFiltro.has(semanaEmissao.chave));
+        const periodoEmissao = periodosFiltro.size > 0 ? getPeriodoAgrupamento(row[1]) : null;
+        const passouPeriodo = periodosFiltro.size === 0 || (periodoEmissao && periodosFiltro.has(periodoEmissao.chave));
         const equipamentoVal = row[6] ? row[6].toString().toLowerCase() : '';
+        const tagVal = row[15] ? row[15].toString().toLowerCase() : '';
         const salaVal = row[7] ? row[7].toString().toLowerCase() : '';
         const passouEquipamentoSala = !equipamentoSalaFiltro ||
-            equipamentoVal.includes(equipamentoSalaFiltro) || salaVal.includes(equipamentoSalaFiltro);
+            equipamentoVal.includes(equipamentoSalaFiltro) || tagVal.includes(equipamentoSalaFiltro) ||
+            salaVal.includes(equipamentoSalaFiltro);
 
-        return passouStatus && dentroDoIntervalo(row[1]) && passouEmpresaResponsavel && passouAnoEmissao && passouMesEmissao &&
-            passouSemana && passouBloco && passouEquipamentoSala;
+        return passouStatus && dentroDoIntervalo(row[1]) && passouEmpresaResponsavel && passouAnoEmissao &&
+            passouPeriodo && passouBloco && passouDisciplina && passouSistema && passouEquipamentoSala;
     });
 
     currentPage = 1;
     renderTableBody();
     updatePagination();
     
-    atualizarDashboards(); 
+    atualizarDashboards();
+    atualizarMetricasEquipamento();
 }
 
 function getTopNData(dataArray, colIndex, topN) {
@@ -499,19 +504,17 @@ function getTopNData(dataArray, colIndex, topN) {
 }
 
 const NOMES_PERIODICIDADE = {
-    diario: { adj: 'Diário', agrupador: 'Dia', emissao: 'dia' },
-    semanal: { adj: 'Semanal', agrupador: 'Semana', emissao: 'semana' },
-    quinzenal: { adj: 'Quinzenal', agrupador: 'Quinzena', emissao: 'quinzena' },
-    mensal: { adj: 'Mensal', agrupador: 'Mês', emissao: 'mês' },
-    trimestral: { adj: 'Trimestral', agrupador: 'Trimestre', emissao: 'trimestre' },
-    semestral: { adj: 'Semestral', agrupador: 'Semestre', emissao: 'semestre' }
+    semanal: { adj: 'Semanal', agrupador: 'Semana', agrupadores: 'Semanas', emissao: 'semana' },
+    mensal: { adj: 'Mensal', agrupador: 'Mês', agrupadores: 'Meses', emissao: 'mês' },
+    trimestral: { adj: 'Trimestral', agrupador: 'Trimestre', agrupadores: 'Trimestres', emissao: 'trimestre' },
+    semestral: { adj: 'Semestral', agrupador: 'Semestre', agrupadores: 'Semestres', emissao: 'semestre' }
 };
 
 function getPeriodicidade() {
     return NOMES_PERIODICIDADE[filterPeriodicidade.value] || NOMES_PERIODICIDADE.mensal;
 }
 
-// Agrupa a data de emissão no período escolhido (diário a semestral)
+// Agrupa a data de emissão no período escolhido (semanal a semestral)
 function getPeriodoAgrupamento(dataEmissao) {
     const mes = getMesEmissao(dataEmissao);
     if (!mes) return null;
@@ -519,18 +522,6 @@ function getPeriodoAgrupamento(dataEmissao) {
     const aa = String(mes.ano).slice(-2);
     const abrev = formatarMesEmissao(mes);
     if (tipo === 'semanal') return getSemanaEmissao(dataEmissao);
-    if (tipo === 'diario' || tipo === 'quinzenal') {
-        const m = dataEmissao.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/) || dataEmissao.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-        if (!m) return null;
-        const dia = dataEmissao.includes('/') ? Number(m[1]) : Number(m[3]);
-        const mm = String(mes.mes).padStart(2, '0');
-        if (tipo === 'diario') {
-            const dd = String(dia).padStart(2, '0');
-            return { chave: `${mes.chave}-${dd}`, label: `${dd}/${mm}/${aa}` };
-        }
-        const q = dia <= 15 ? 1 : 2;
-        return { chave: `${mes.chave}-${q}`, label: `${q}ª quinz. ${abrev}` };
-    }
     if (tipo === 'trimestral') {
         const t = Math.ceil(mes.mes / 3);
         return { chave: `${mes.ano}-T${t}`, label: `${t}º tri/${aa}` };
@@ -570,6 +561,256 @@ function isStatusResolvido(status) {
     const statusMin = status.toLowerCase();
     return statusMin.includes('aprovado') || statusMin.includes('concluído') ||
         statusMin.includes('concluido') || statusMin.includes('resolvido');
+}
+
+function parseDataHora(valor) {
+    if (!valor || valor === '-') return null;
+    const texto = String(valor).trim();
+    if (/^\d{4}-\d{1,2}-\d{1,2}T/.test(texto)) {
+        const timestamp = Date.parse(texto);
+        return Number.isFinite(timestamp) ? timestamp : null;
+    }
+
+    const brasileira = texto.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ T,]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+    const iso = texto.match(/^(\d{4})-(\d{1,2})-(\d{1,2})(?:[ T,]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+    const correspondencia = brasileira || iso;
+    if (!correspondencia) return null;
+
+    const ano = Number(brasileira ? correspondencia[3] : correspondencia[1]);
+    const mes = Number(brasileira ? correspondencia[2] : correspondencia[2]);
+    const dia = Number(brasileira ? correspondencia[1] : correspondencia[3]);
+    const hora = Number(correspondencia[4] || 0);
+    const minuto = Number(correspondencia[5] || 0);
+    const segundo = Number(correspondencia[6] || 0);
+    const data = new Date(ano, mes - 1, dia, hora, minuto, segundo);
+    if (data.getFullYear() !== ano || data.getMonth() !== mes - 1 || data.getDate() !== dia ||
+        hora > 23 || minuto > 59 || segundo > 59) return null;
+    return data.getTime();
+}
+
+function calcularMetricasEquipamento(registros) {
+    const eventos = registros.map(row => ({
+        abertura: parseDataHora(row[1]),
+        fechamento: parseDataHora(row[11]),
+        resolvida: isStatusResolvido(row[0] ? String(row[0]).replace(/⚠️|✅|⏸️|❌|⚙️|🛑/g, '').trim() : '')
+    })).filter(evento => evento.abertura !== null)
+        .sort((a, b) => a.abertura - b.abertura);
+
+    const temposReparo = eventos
+        .filter(evento => evento.resolvida && evento.fechamento !== null && evento.fechamento >= evento.abertura)
+        .map(evento => evento.fechamento - evento.abertura);
+    const temposOperacao = [];
+    for (let indice = 1; indice < eventos.length; indice++) {
+        const anterior = eventos[indice - 1];
+        const proximaFalha = eventos[indice];
+        if (anterior.resolvida && anterior.fechamento !== null && proximaFalha.abertura > anterior.fechamento) {
+            temposOperacao.push(proximaFalha.abertura - anterior.fechamento);
+        }
+    }
+
+    const media = valores => valores.length
+        ? valores.reduce((total, valor) => total + valor, 0) / valores.length
+        : null;
+    const mttr = media(temposReparo);
+    const mtbf = media(temposOperacao);
+    return {
+        mttr,
+        mtbf,
+        disponibilidade: mttr !== null && mtbf !== null && mttr + mtbf > 0
+            ? mtbf / (mtbf + mttr) * 100
+            : null,
+        quantidadeReparos: temposReparo.length,
+        quantidadeIntervalos: temposOperacao.length
+    };
+}
+
+function formatarDuracaoMetricas(duracaoMs) {
+    if (duracaoMs === null) return 'Dados insuficientes';
+    const horas = duracaoMs / 3600000;
+    const dias = horas / 24;
+    const formatarNumero = valor => valor.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+    return `${formatarNumero(dias)} dias (${formatarNumero(horas)} h)`;
+}
+
+function atualizarMetricasEquipamento() {
+    equipmentMetricsContainer.replaceChildren();
+    equipmentMetricsContainer.hidden = true;
+    const pesquisa = filterEquipamentoSala.value.trim().toLocaleLowerCase('pt-BR');
+    if (!pesquisa) return;
+
+    const registrosPorEquipamento = new Map();
+    filteredData.forEach(row => {
+        const equipamento = row[6] ? String(row[6]).trim() : '';
+        const tag = row[15] ? String(row[15]).trim() : '';
+        const equipamentoNormalizado = equipamento.toLocaleLowerCase('pt-BR');
+        const tagNormalizada = tag.toLocaleLowerCase('pt-BR');
+        if (!equipamentoNormalizado.includes(pesquisa) && !tagNormalizada.includes(pesquisa)) return;
+
+        const chave = tag && tag !== '-' ? `tag:${tagNormalizada}` : `equipamento:${equipamentoNormalizado}`;
+        if (!registrosPorEquipamento.has(chave)) {
+            const identificacao = [
+                equipamento && equipamento !== '-' ? equipamento : '',
+                tag && tag !== '-' ? `TAG: ${tag}` : ''
+            ].filter(Boolean).join(' | ') || 'Equipamento sem identificação';
+            registrosPorEquipamento.set(chave, { nome: identificacao, registros: [] });
+        }
+        registrosPorEquipamento.get(chave).registros.push(row);
+    });
+    if (registrosPorEquipamento.size === 0) return;
+
+    equipmentMetricsContainer.hidden = false;
+    const titulo = document.createElement('h3');
+    titulo.textContent = 'Confiabilidade dos equipamentos encontrados';
+    equipmentMetricsContainer.appendChild(titulo);
+    const explicacao = document.createElement('p');
+    explicacao.className = 'equipment-metrics-explanation';
+    explicacao.textContent = 'MTTR é o tempo médio entre a abertura e o fechamento das OSMCs resolvidas. MTBF é o tempo médio em operação entre o fechamento de uma OSMC e a abertura da próxima. Disponibilidade = MTBF ÷ (MTBF + MTTR). Os cálculos consideram os filtros ativos; os tempos são exibidos em dias e horas.';
+    equipmentMetricsContainer.appendChild(explicacao);
+
+    const equipamentos = Array.from(registrosPorEquipamento.values());
+    equipamentos.forEach(({ nome, registros }) => {
+        const metricas = calcularMetricasEquipamento(registros);
+        const item = document.createElement('article');
+        item.className = 'equipment-metric-item';
+        const nomeEquipamento = document.createElement('h4');
+        nomeEquipamento.textContent = nome;
+        item.appendChild(nomeEquipamento);
+
+        const valores = document.createElement('div');
+        valores.className = 'equipment-metric-values';
+        const indicadores = [
+            ['MTTR', formatarDuracaoMetricas(metricas.mttr), `${metricas.quantidadeReparos} OSMCs resolvidas utilizadas`],
+            ['MTBF', formatarDuracaoMetricas(metricas.mtbf), `${metricas.quantidadeIntervalos} intervalos válidos utilizados`],
+            ['Disponibilidade', metricas.disponibilidade === null ? 'Dados insuficientes' : `${metricas.disponibilidade.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`, 'MTBF ÷ (MTBF + MTTR)']
+        ];
+        indicadores.forEach(([rotulo, valor, detalhe]) => {
+            const indicador = document.createElement('div');
+            indicador.className = 'equipment-metric-value';
+            const tituloIndicador = document.createElement('strong');
+            tituloIndicador.textContent = rotulo;
+            const valorIndicador = document.createElement('span');
+            valorIndicador.textContent = valor;
+            const detalheIndicador = document.createElement('small');
+            detalheIndicador.textContent = detalhe;
+            indicador.append(tituloIndicador, valorIndicador, detalheIndicador);
+            valores.appendChild(indicador);
+        });
+        item.appendChild(valores);
+        equipmentMetricsContainer.appendChild(item);
+    });
+
+    const btnRelatorio = document.createElement('button');
+    btnRelatorio.type = 'button';
+    btnRelatorio.className = 'btn-equipment-report';
+    btnRelatorio.textContent = 'Gerar relatório por equipamento (PDF)';
+    btnRelatorio.addEventListener('click', () => gerarRelatorioPdfEquipamento(equipamentos));
+    equipmentMetricsContainer.appendChild(btnRelatorio);
+}
+
+function obterLogoHemobras() {
+    const logo = document.getElementById('hemobrasLogo');
+    if (!(logo instanceof HTMLImageElement) || !logo.complete || logo.naturalWidth === 0) {
+        alert('Não foi possível carregar a logo da Hemobrás. Verifique o arquivo da imagem e tente novamente.');
+        return null;
+    }
+    return logo;
+}
+
+function adicionarLogoHemobras(pdf, logo, x, y, altura) {
+    const largura = altura * logo.naturalWidth / logo.naturalHeight;
+    pdf.addImage(logo, 'PNG', x, y, largura, altura);
+    return largura;
+}
+
+function gerarRelatorioPdfEquipamento(equipamentos) {
+    if (!window.jspdf) {
+        alert('Não foi possível carregar o gerador de PDF. Verifique sua conexão e tente novamente.');
+        return;
+    }
+
+    const logoHemobras = obterLogoHemobras();
+    if (!logoHemobras) return;
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+    const larguraPagina = pdf.internal.pageSize.getWidth();
+    const alturaPagina = pdf.internal.pageSize.getHeight();
+    const margem = 16;
+    const larguraTexto = larguraPagina - margem * 2;
+    let y = 16;
+
+    function cabecalho(continuacao = false) {
+        pdf.setFillColor(138, 21, 27);
+        pdf.rect(0, 0, larguraPagina, 10, 'F');
+        const larguraLogo = adicionarLogoHemobras(pdf, logoHemobras, margem, 13, 12);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(14);
+        pdf.setTextColor(138, 21, 27);
+        pdf.text('HEMOBRÁS', margem + larguraLogo + 3, 18);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(8);
+        pdf.setTextColor(80);
+        pdf.text('EMPRESA BRASILEIRA DE HEMODERIVADOS E BIOTECNOLOGIA', margem + larguraLogo + 3, 23);
+        pdf.setTextColor(138, 21, 27);
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(12);
+        pdf.text(continuacao ? 'Relatório de confiabilidade por equipamento (continuação)' : 'Relatório de confiabilidade por equipamento', margem, 34);
+        pdf.setFont('helvetica', 'normal');
+        pdf.setFontSize(8);
+        pdf.setTextColor(80);
+        pdf.text(`Pesquisa: ${filterEquipamentoSala.value.trim()} | Período/filtros: ${getRotuloPeriodo() || 'todos os períodos'}`, margem, 40);
+        pdf.setTextColor(0);
+        y = 46;
+    }
+
+    function novaPagina() {
+        pdf.addPage();
+        cabecalho(true);
+    }
+
+    function escrever(texto, tamanho = 8, negrito = false, espaco = 2, cor = [35, 35, 35]) {
+        pdf.setFont('helvetica', negrito ? 'bold' : 'normal');
+        pdf.setFontSize(tamanho);
+        pdf.setTextColor(cor[0], cor[1], cor[2]);
+        const linhas = pdf.splitTextToSize(String(texto), larguraTexto);
+        const alturaLinha = Math.max(3.5, tamanho * 0.48);
+        let inicio = 0;
+        while (inicio < linhas.length) {
+            let linhasDisponiveis = Math.floor((alturaPagina - 14 - y) / alturaLinha);
+            if (linhasDisponiveis < 1) {
+                novaPagina();
+                linhasDisponiveis = Math.floor((alturaPagina - 14 - y) / alturaLinha);
+            }
+            const bloco = linhas.slice(inicio, inicio + linhasDisponiveis);
+            pdf.text(bloco, margem, y);
+            y += bloco.length * alturaLinha;
+            inicio += bloco.length;
+            if (inicio < linhas.length) novaPagina();
+        }
+        y += espaco;
+        pdf.setTextColor(0);
+    }
+
+    cabecalho();
+    escrever('Relatório calculado com os filtros ativos no painel. O MTTR considera OSMCs resolvidas com horários válidos; o MTBF usa os intervalos entre o fechamento de uma OSMC e a abertura da próxima.', 8, false, 4, [80, 80, 80]);
+
+    equipamentos.forEach(({ nome, registros }) => {
+        const metricas = calcularMetricasEquipamento(registros);
+        escrever(`Equipamento: ${nome}`, 12, true, 2, [138, 21, 27]);
+        escrever(`MTTR: ${formatarDuracaoMetricas(metricas.mttr)} (${metricas.quantidadeReparos} reparos) | MTBF: ${formatarDuracaoMetricas(metricas.mtbf)} (${metricas.quantidadeIntervalos} intervalos) | Disponibilidade: ${metricas.disponibilidade === null ? 'Dados insuficientes' : `${metricas.disponibilidade.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`}`, 9, true, 2);
+        escrever(`Quantidade de OSMCs analisadas: ${registros.length}`, 8, false, 3);
+
+        registros.forEach(row => {
+            const status = row[0] ? String(row[0]).replace(/⚠️|✅|⏸️|❌|⚙️|🛑/g, '').trim() : '-';
+            escrever(`OSMC ${row[2] || '-'} | Status: ${status} | Abertura: ${row[1] || '-'} | Fechamento: ${row[11] || '-'}`, 8, true, 1);
+            escrever(`TAG: ${row[15] || '-'} | Empresa: ${row[12] || '-'} | Disciplina: ${row[13] || '-'} | Sistema: ${row[14] || '-'} | Sala: ${row[7] || '-'}`, 8, false, 1);
+            escrever(`Descrição: ${row[8] || '-'}`, 8, false, 3);
+        });
+    });
+
+    const nomeArquivo = (equipamentos.length === 1 ? equipamentos[0].nome : 'equipamentos')
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase();
+    pdf.save(`relatorio-equipamento-${nomeArquivo || 'pesquisado'}.pdf`);
 }
 
 function getMesEmissao(dataEmissao) {
@@ -679,6 +920,9 @@ function gerarRelatorioPdfMensal() {
         return;
     }
 
+    const logoHemobras = obterLogoHemobras();
+    if (!logoHemobras) return;
+
     const somentePendencias = reportType.value === 'pendencias';
     const pendentes = filteredData.filter(row => {
         const status = row[0] ? row[0].toString().replace(/⚠️|✅|⏸️|❌|⚙️|🛑/g, '').trim() : '';
@@ -697,8 +941,15 @@ function gerarRelatorioPdfMensal() {
     const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
     const mesesPorPagina = 6;
     const empresasSelecionadas = Array.from(filterEmpresaResponsavelDropdown.getSelecionados());
+    const todasEmpresasSelecionadas = empresasSelecionadas.length === 0 ||
+        empresasSelecionadas.length === filterEmpresaResponsavelDropdown.itens.length;
+    const execucaoPorPeriodo = todasEmpresasSelecionadas
+        ? getExecucaoMensalStats(filteredData)
+        : null;
+    const percentualExecucaoPorPeriodo = execucaoPorPeriodo
+        ? new Map(execucaoPorPeriodo.labels.map((label, indice) => [label, execucaoPorPeriodo.data[indice]]))
+        : null;
     const empresaResponsavel = empresasSelecionadas.length > 0 ? empresasSelecionadas.join(', ') : 'Todas as empresas responsáveis';
-    const semanasSelecionadas = getRotulosSemanasSelecionadas();
     const tituloRelatorio = somentePendencias
         ? 'Relatório de Pendências de Manutenção Corretiva'
         : 'Relatório Completo de Manutenção Corretiva';
@@ -711,12 +962,13 @@ function gerarRelatorioPdfMensal() {
         pdf.rect(0, 10, larguraPagina, 1.5, 'F');
         pdf.setTextColor(138, 21, 27);
         pdf.setFont('helvetica', 'bold');
-        pdf.setFontSize(20);
-        pdf.text('HEMOBRAS', 24, 23);
+        pdf.setFontSize(18);
+        const larguraLogo = adicionarLogoHemobras(pdf, logoHemobras, 24, 14, 14);
+        pdf.text('HEMOBRÁS', 24 + larguraLogo + 3, 22);
         pdf.setFont('helvetica', 'normal');
         pdf.setFontSize(8);
         pdf.setTextColor(80);
-        pdf.text('EMPRESA BRASILEIRA DE HEMODERIVADOS E BIOTECNOLOGIA', 24, 28);
+        pdf.text('EMPRESA BRASILEIRA DE HEMODERIVADOS E BIOTECNOLOGIA', 24 + larguraLogo + 3, 27);
         pdf.setTextColor(35);
         pdf.setFont('helvetica', 'bold');
         pdf.setFontSize(14);
@@ -819,23 +1071,37 @@ function gerarRelatorioPdfMensal() {
             pdf.setFont('helvetica', 'bold');
             pdf.setFontSize(8.5);
             pdf.text(mes.label, centroGrupo, baseGrafico + 7, { align: 'center' });
+            if (percentualExecucaoPorPeriodo && percentualExecucaoPorPeriodo.has(mes.label)) {
+                pdf.setFontSize(7);
+                pdf.setTextColor(21, 87, 36);
+                pdf.text(`Execução: ${percentualExecucaoPorPeriodo.get(mes.label)}%`, centroGrupo, baseGrafico + 12, { align: 'center' });
+                pdf.setTextColor(0);
+            }
             pdf.setFont('helvetica', 'normal');
         });
     }
 
     const larguraPagina = pdf.internal.pageSize.getWidth();
     const margemEsquerda = 18;
-    const margemDireitaTabela = 12;
+    const larguraTabela = larguraPagina - margemEsquerda - 18;
     const colunasFixas = [
-        { titulo: 'Nº OSMC', x: 18, largura: 24 },
-        { titulo: 'Emissão', x: 42, largura: 22 },
-        { titulo: 'Status', x: 64, largura: 34 },
-        { titulo: 'Solicitante', x: 98, largura: 28 },
-        { titulo: 'Bloco', x: 126, largura: 18 },
-        { titulo: 'Equipamento', x: 144, largura: 30 }
+        { titulo: 'Nº OSMC', largura: 19 },
+        { titulo: 'Emissão', largura: 18 },
+        { titulo: 'Status', largura: 26 },
+        { titulo: 'Solicitante', largura: 23 },
+        { titulo: 'Bloco', largura: 13 },
+        { titulo: 'Empresa', largura: 23 },
+        { titulo: 'Disciplina', largura: 19 },
+        { titulo: 'Sistema', largura: 19 },
+        { titulo: 'Equipamento', largura: 21 }
     ];
-    const inicioTexto = colunasFixas[colunasFixas.length - 1].x + colunasFixas[colunasFixas.length - 1].largura;
-    const larguraTextoTotal = larguraPagina - margemDireitaTabela - inicioTexto;
+    let proximaColunaX = margemEsquerda;
+    colunasFixas.forEach(coluna => {
+        coluna.x = proximaColunaX;
+        proximaColunaX += coluna.largura;
+    });
+    const inicioTexto = proximaColunaX;
+    const larguraTextoTotal = larguraTabela - (inicioTexto - margemEsquerda);
     const larguraDescricao = Math.floor(larguraTextoTotal / 3);
     const larguraObservacao = Math.floor(larguraTextoTotal / 3);
     const larguraMotivo = larguraTextoTotal - larguraDescricao - larguraObservacao;
@@ -845,6 +1111,7 @@ function gerarRelatorioPdfMensal() {
         { titulo: 'Observação', x: inicioTexto + larguraDescricao, largura: larguraObservacao },
         { titulo: 'Motivo', x: inicioTexto + larguraDescricao + larguraObservacao, largura: larguraMotivo }
     ];
+    const indiceTexto = colunasFixas.length;
     let yCabecalho;
     const alturaLinhaTexto = 3.5;
     const yLimite = pdf.internal.pageSize.getHeight() - 15;
@@ -859,7 +1126,7 @@ function gerarRelatorioPdfMensal() {
         );
         yCabecalho = fimCabecalho + 8;
         pdf.setFillColor(138, 21, 27);
-        pdf.rect(margemEsquerda, yCabecalho, larguraPagina - 36, 8, 'F');
+        pdf.rect(margemEsquerda, yCabecalho, larguraTabela, 8, 'F');
         pdf.setFont('helvetica', 'bold');
         pdf.setFontSize(8);
         pdf.setTextColor(255);
@@ -880,9 +1147,9 @@ function gerarRelatorioPdfMensal() {
             const descricao = row[8] && row[8] !== '-' ? String(row[8]) : '-';
             const observacao = row[9] && row[9] !== '-' ? String(row[9]) : '-';
             const motivo = row[10] && row[10] !== '-' ? String(row[10]) : '-';
-            const linhasDescricao = pdf.splitTextToSize(descricao, colunas[6].largura - 2);
-            const linhasObservacao = pdf.splitTextToSize(observacao, colunas[7].largura - 2);
-            const linhasMotivo = pdf.splitTextToSize(motivo, colunas[8].largura - 2);
+            const linhasDescricao = pdf.splitTextToSize(descricao, colunas[indiceTexto].largura - 2);
+            const linhasObservacao = pdf.splitTextToSize(observacao, colunas[indiceTexto + 1].largura - 2);
+            const linhasMotivo = pdf.splitTextToSize(motivo, colunas[indiceTexto + 2].largura - 2);
             const maxLinhasPorBloco = 30;
             const totalLinhas = Math.max(linhasDescricao.length, linhasObservacao.length, linhasMotivo.length);
 
@@ -895,14 +1162,14 @@ function gerarRelatorioPdfMensal() {
 
                 if (indiceLinha % 2 === 0) {
                 pdf.setFillColor(248, 241, 242);
-                    pdf.rect(margemEsquerda, yAtual, larguraPagina - 36, alturaLinha, 'F');
+                    pdf.rect(margemEsquerda, yAtual, larguraTabela, alturaLinha, 'F');
                 }
                 pdf.setDrawColor(220);
-                pdf.line(margemEsquerda, yAtual + alturaLinha, larguraPagina - margemEsquerda, yAtual + alturaLinha);
+                pdf.line(margemEsquerda, yAtual + alturaLinha, margemEsquerda + larguraTabela, yAtual + alturaLinha);
 
                 if (inicioBloco === 0) {
-                    const valores = [row[2], row[1], row[0], row[3], row[4], row[6]];
-                    colunas.slice(0, 6).forEach((coluna, colunaIndice) => {
+                    const valores = [row[2], row[1], row[0], row[3], row[4], row[12], row[13], row[14], row[6]];
+                    colunas.slice(0, colunasFixas.length).forEach((coluna, colunaIndice) => {
                         const valor = valores[colunaIndice] && valores[colunaIndice] !== '-' ? valores[colunaIndice] : '-';
                         if (colunaIndice === 2) {
                             const statusLimpo = String(valor).replace(/⚠️|✅|⏸️|❌|⚙️|🛑/g, '').trim();
@@ -913,9 +1180,9 @@ function gerarRelatorioPdfMensal() {
                         }
                     });
                 }
-                pdf.text(descricaoBloco, colunas[6].x, yAtual + 6.5);
-                pdf.text(observacaoBloco, colunas[7].x, yAtual + 6.5);
-                pdf.text(motivoBloco, colunas[8].x, yAtual + 6.5);
+                pdf.text(descricaoBloco, colunas[indiceTexto].x, yAtual + 6.5);
+                pdf.text(observacaoBloco, colunas[indiceTexto + 1].x, yAtual + 6.5);
+                pdf.text(motivoBloco, colunas[indiceTexto + 2].x, yAtual + 6.5);
                 yAtual += alturaLinha;
                 indiceLinha++;
             }
@@ -957,7 +1224,6 @@ function atualizarDashboards() {
 
     const empresasSelecionadas = Array.from(filterEmpresaResponsavelDropdown.getSelecionados());
     const sufixoEmpresa = empresasSelecionadas.length ? ` - ${empresasSelecionadas.join(', ')}` : '';
-    const semanasSelecionadas = getRotulosSemanasSelecionadas();
     const periodo = getRotuloPeriodo();
     const sufixoSemana = periodo ? ` - Período: ${periodo}` : '';
 
@@ -1039,9 +1305,9 @@ function atualizarDashboards() {
 function renderTableHeaders() {
     tableHead.innerHTML = '';
     const tr = document.createElement('tr');
-    COLUNAS_DESEJADAS.forEach(colName => {
+    INDICES_COLUNAS_TABELA.forEach(indiceColuna => {
         const th = document.createElement('th');
-        th.textContent = colName;
+        th.textContent = COLUNAS_DESEJADAS[indiceColuna];
         tr.appendChild(th);
     });
     tableHead.appendChild(tr);
@@ -1055,11 +1321,12 @@ function renderTableBody() {
 
     paginatedItems.forEach(row => {
         const tr = document.createElement('tr');
-        row.forEach((cellValue, i) => {
+        INDICES_COLUNAS_TABELA.forEach(indiceColuna => {
+            const cellValue = row[indiceColuna];
             const td = document.createElement('td');
             let val = cellValue ? cellValue.toString().trim() : '-';
 
-            if (i === 0) {
+            if (indiceColuna === 0) {
                 let cleanVal = val.replace(/⚠️|✅|⏸️|❌|⚙️|🛑/g, '').trim();
                 let valMin = cleanVal.toLowerCase();
 
@@ -1127,10 +1394,6 @@ filterEquipamentoSala.addEventListener('input', () => {
     equipamentoSalaDebounceId = setTimeout(aplicarFiltrosGerais, 300);
 });
 
-filterAnoEmissao.addEventListener('change', () => {
-    popularFiltrosDinamicos();
-    aplicarFiltrosGerais();
-});
 [filterDataInicio, filterDataFim].forEach(input => input.addEventListener('change', () => {
     if (filterDataInicio.value && filterDataFim.value && filterDataInicio.value > filterDataFim.value) {
         if (input === filterDataInicio) filterDataFim.value = filterDataInicio.value;
@@ -1178,7 +1441,11 @@ document.querySelectorAll('.btn-calendar').forEach(btn => btn.addEventListener('
     if (inputData.showPicker) inputData.showPicker();
     else inputData.focus();
 }));
-filterPeriodicidade.addEventListener('change', atualizarDashboards);
+filterPeriodicidade.addEventListener('change', () => {
+    filterPeriodoEmissaoDropdown.selecionados = new Set();
+    popularFiltrosDinamicos();
+    aplicarFiltrosGerais();
+});
 btnPdfReport.addEventListener('click', gerarRelatorioPdfMensal);
 
 document.addEventListener('DOMContentLoaded', init);

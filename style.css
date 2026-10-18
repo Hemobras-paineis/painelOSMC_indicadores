@@ -297,6 +297,85 @@ body {
     background-color: #6a1014;
 }
 
+.equipment-metrics {
+    margin: 0 0 24px;
+    padding: 18px;
+    background: #fff;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+}
+
+.equipment-metrics h3 {
+    color: var(--primary-color);
+    font-size: 17px;
+    margin-bottom: 8px;
+}
+
+.equipment-metrics-explanation {
+    margin-bottom: 16px;
+    color: #555;
+    line-height: 1.5;
+}
+
+.equipment-metric-item {
+    padding: 14px 0;
+    border-top: 1px solid var(--border-color);
+}
+
+.equipment-metric-item h4 {
+    margin-bottom: 10px;
+    font-size: 15px;
+}
+
+.equipment-metric-values {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 10px;
+}
+
+.equipment-metric-value {
+    padding: 10px 12px;
+    background: var(--secondary-color);
+    border-radius: 6px;
+}
+
+.equipment-metric-value strong {
+    display: block;
+    margin-bottom: 4px;
+    font-size: 12px;
+    color: #666;
+    text-transform: uppercase;
+}
+
+.equipment-metric-value span {
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--primary-color);
+}
+
+.equipment-metric-value small {
+    display: block;
+    margin-top: 4px;
+    color: #666;
+}
+
+.btn-equipment-report {
+    margin-top: 14px;
+    background-color: #155724;
+    color: var(--white);
+    border: none;
+    padding: 10px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-family: var(--font-main);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.btn-equipment-report:hover {
+    background-color: #10451d;
+}
+
 /* Tabela */
 .main-content {
     background-color: var(--white);
