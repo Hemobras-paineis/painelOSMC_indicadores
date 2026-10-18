@@ -569,6 +569,8 @@ tbody tr:hover {
 .kpi-card.aprovadas p { color: #155724; }
 .kpi-card.pendentes { border-left-color: #dc3545; }
 .kpi-card.pendentes p { color: #dc3545; }
+.kpi-card.execucao { border-left-color: #856404; }
+.kpi-card.execucao p { color: #856404; }
 
 .chart-container {
     width: 250px;

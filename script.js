@@ -1082,6 +1082,95 @@ function gerarRelatorioPdfMensal() {
     }
 
     const larguraPagina = pdf.internal.pageSize.getWidth();
+    const estatisticasPorEmpresa = new Map();
+    filteredData.forEach(row => {
+        const empresa = row.empresaResponsavel && row.empresaResponsavel !== '-'
+            ? row.empresaResponsavel
+            : row[12] && row[12] !== '-' ? row[12] : 'Não informada';
+        if (!estatisticasPorEmpresa.has(empresa)) {
+            estatisticasPorEmpresa.set(empresa, { total: 0, resolvidas: 0 });
+        }
+        const estatisticas = estatisticasPorEmpresa.get(empresa);
+        estatisticas.total++;
+        const status = row[0] ? String(row[0]).replace(/⚠️|✅|⏸️|❌|⚙️|🛑/g, '').trim() : '';
+        if (isStatusResolvido(status)) estatisticas.resolvidas++;
+    });
+    const empresasParaRelatorio = Array.from(estatisticasPorEmpresa.entries())
+        .sort(([empresaA], [empresaB]) => empresaA.localeCompare(empresaB, 'pt-BR'));
+    const margemTabelaEmpresa = 24;
+    const larguraTabelaEmpresa = larguraPagina - margemTabelaEmpresa * 2;
+    const colunasEmpresa = [
+        { titulo: 'Empresa responsável', largura: larguraTabelaEmpresa * 0.46 },
+        { titulo: 'Total', largura: larguraTabelaEmpresa * 0.13 },
+        { titulo: 'Resolvidas', largura: larguraTabelaEmpresa * 0.15 },
+        { titulo: 'Backlog', largura: larguraTabelaEmpresa * 0.13 },
+        { titulo: 'Média de execução', largura: larguraTabelaEmpresa * 0.13 }
+    ];
+    let yResumoEmpresa;
+
+    function iniciarPaginaResumoEmpresa() {
+        pdf.addPage();
+        const fimCabecalho = desenharCabecalho(
+            'Resumo por empresa',
+            'Total, ordens resolvidas, backlog e média de execução'
+        );
+        yResumoEmpresa = fimCabecalho + 9;
+        pdf.setFillColor(138, 21, 27);
+        pdf.rect(margemTabelaEmpresa, yResumoEmpresa, larguraTabelaEmpresa, 9, 'F');
+        pdf.setFont('helvetica', 'bold');
+        pdf.setFontSize(8);
+        pdf.setTextColor(255);
+        let xEmpresa = margemTabelaEmpresa;
+        colunasEmpresa.forEach(coluna => {
+            coluna.x = xEmpresa;
+            pdf.text(coluna.titulo, xEmpresa + 2, yResumoEmpresa + 6);
+            xEmpresa += coluna.largura;
+        });
+        pdf.setTextColor(0);
+        pdf.setFont('helvetica', 'normal');
+        yResumoEmpresa += 9;
+    }
+
+    iniciarPaginaResumoEmpresa();
+    function desenharLinhaResumoEmpresa(empresa, estatisticas, indice) {
+        if (yResumoEmpresa + 9 > pdf.internal.pageSize.getHeight() - 15) {
+            iniciarPaginaResumoEmpresa();
+        }
+        if (indice % 2 === 0) {
+            pdf.setFillColor(248, 241, 242);
+            pdf.rect(margemTabelaEmpresa, yResumoEmpresa, larguraTabelaEmpresa, 9, 'F');
+        }
+        pdf.setDrawColor(220);
+        pdf.line(margemTabelaEmpresa, yResumoEmpresa + 9, margemTabelaEmpresa + larguraTabelaEmpresa, yResumoEmpresa + 9);
+        const backlog = estatisticas.total - estatisticas.resolvidas;
+        const mediaExecucao = estatisticas.total
+            ? `${((estatisticas.resolvidas / estatisticas.total) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`
+            : '0%';
+        const valoresEmpresa = [
+            empresa,
+            String(estatisticas.total),
+            String(estatisticas.resolvidas),
+            String(backlog),
+            mediaExecucao
+        ];
+        pdf.setFontSize(8);
+        valoresEmpresa.forEach((valor, colunaIndice) => {
+            const coluna = colunasEmpresa[colunaIndice];
+            pdf.text(
+                pdf.splitTextToSize(valor, coluna.largura - 4)[0],
+                colunaIndice === 0 ? coluna.x + 2 : coluna.x + coluna.largura - 2,
+                yResumoEmpresa + 6,
+                colunaIndice === 0 ? undefined : { align: 'right' }
+            );
+        });
+        pdf.setFont('helvetica', 'normal');
+        yResumoEmpresa += 9;
+    }
+
+    empresasParaRelatorio.forEach(([empresa, estatisticas], indice) => {
+        desenharLinhaResumoEmpresa(empresa, estatisticas, indice);
+    });
+
     const margemEsquerda = 18;
     const larguraTabela = larguraPagina - margemEsquerda - 18;
     const colunasFixas = [
@@ -1173,8 +1262,13 @@ function gerarRelatorioPdfMensal() {
                         const valor = valores[colunaIndice] && valores[colunaIndice] !== '-' ? valores[colunaIndice] : '-';
                         if (colunaIndice === 2) {
                             const statusLimpo = String(valor).replace(/⚠️|✅|⏸️|❌|⚙️|🛑/g, '').trim();
+                            const estiloStatus = obterEstiloStatus(statusLimpo);
+                            pdf.setFillColor(estiloStatus.fundo[0], estiloStatus.fundo[1], estiloStatus.fundo[2]);
+                            pdf.roundedRect(coluna.x, yAtual + 1, coluna.largura - 1, 9, 1.5, 1.5, 'F');
                             desenharIconeStatus(pdf, statusLimpo, coluna.x, yAtual + 6.5);
+                            pdf.setTextColor(estiloStatus.cor[0], estiloStatus.cor[1], estiloStatus.cor[2]);
                             pdf.text(pdf.splitTextToSize(statusLimpo, coluna.largura - 6)[0], coluna.x + 4.5, yAtual + 6.5);
+                            pdf.setTextColor(0);
                         } else {
                             pdf.text(pdf.splitTextToSize(String(valor), coluna.largura - 2)[0], coluna.x, yAtual + 6.5);
                         }
@@ -1207,6 +1301,11 @@ function atualizarDashboards() {
         }
     });
 
+    const totalComStatus = resolvidas + pendentes;
+    const mediaExecucao = totalComStatus
+        ? `${((resolvidas / totalComStatus) * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`
+        : '0%';
+
     kpiCardsContainer.innerHTML = `
         <div class="kpi-card total">
             <h3>Total Filtrado</h3>
@@ -1219,6 +1318,10 @@ function atualizarDashboards() {
         <div class="kpi-card pendentes">
             <h3>Backlog (Pendentes)</h3>
             <p>${pendentes}</p>
+        </div>
+        <div class="kpi-card execucao">
+            <h3>Média de Execução</h3>
+            <p>${mediaExecucao}</p>
         </div>
     `;
 
