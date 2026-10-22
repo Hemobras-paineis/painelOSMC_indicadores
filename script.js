@@ -1121,9 +1121,14 @@ function gerarRelatorioPdfMensal() {
         pdf.setFontSize(8);
         pdf.setTextColor(255);
         let xEmpresa = margemTabelaEmpresa;
-        colunasEmpresa.forEach(coluna => {
+        colunasEmpresa.forEach((coluna, indice) => {
             coluna.x = xEmpresa;
-            pdf.text(coluna.titulo, xEmpresa + 2, yResumoEmpresa + 6);
+            pdf.text(
+                coluna.titulo,
+                indice === 0 ? xEmpresa + 2 : xEmpresa + coluna.largura / 2,
+                yResumoEmpresa + 6,
+                indice === 0 ? undefined : { align: 'center' }
+            );
             xEmpresa += coluna.largura;
         });
         pdf.setTextColor(0);
@@ -1156,11 +1161,12 @@ function gerarRelatorioPdfMensal() {
         pdf.setFontSize(8);
         valoresEmpresa.forEach((valor, colunaIndice) => {
             const coluna = colunasEmpresa[colunaIndice];
+            const alinhamentoEsquerda = colunaIndice === 0;
             pdf.text(
                 pdf.splitTextToSize(valor, coluna.largura - 4)[0],
-                colunaIndice === 0 ? coluna.x + 2 : coluna.x + coluna.largura - 2,
+                alinhamentoEsquerda ? coluna.x + 2 : coluna.x + coluna.largura / 2,
                 yResumoEmpresa + 6,
-                colunaIndice === 0 ? undefined : { align: 'right' }
+                alinhamentoEsquerda ? undefined : { align: 'center' }
             );
         });
         pdf.setFont('helvetica', 'normal');
