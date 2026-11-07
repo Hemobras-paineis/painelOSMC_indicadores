@@ -129,6 +129,18 @@ class MultiSelectDropdown {
         });
         acoes.appendChild(btnTodos);
         acoes.appendChild(btnNenhum);
+        (this.atalhos || []).forEach(({ label, getValores }) => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.textContent = label;
+            btn.addEventListener('click', () => {
+                this.selecionados = new Set(getValores().filter(v => this.itens.some(i => i.value === v)));
+                this.atualizarCheckboxes();
+                this.atualizarTexto();
+                this.onChange();
+            });
+            acoes.appendChild(btn);
+        });
         this.panel.appendChild(acoes);
 
         itens.forEach(({ value, label }) => {
@@ -199,6 +211,30 @@ const filterPeriodoEmissaoDropdown = new MultiSelectDropdown('filterPeriodoEmiss
     aplicarFiltrosGerais();
 });
 const filterBlocoDropdown = new MultiSelectDropdown('filterBloco', 'Todos os Blocos', () => aplicarFiltrosGerais());
+
+// Seleciona os períodos que contêm OS emitidas nos últimos N meses com dados
+function getPeriodosUltimosMeses(n) {
+    const meses = new Set();
+    allData.forEach(row => {
+        const mes = getMesEmissao(row[1]);
+        if (mes) meses.add(mes.chave);
+    });
+    const ultimos = new Set(Array.from(meses).sort().slice(-n));
+    const chaves = new Set();
+    allData.forEach(row => {
+        const mes = getMesEmissao(row[1]);
+        if (!mes || !ultimos.has(mes.chave)) return;
+        const periodo = getPeriodoAgrupamento(row[1]);
+        if (periodo) chaves.add(periodo.chave);
+    });
+    return Array.from(chaves);
+}
+
+filterPeriodoEmissaoDropdown.atalhos = [
+    { label: 'Último mês', getValores: () => getPeriodosUltimosMeses(1) },
+    { label: 'Últimos 2 meses', getValores: () => getPeriodosUltimosMeses(2) },
+    { label: 'Últimos 3 meses', getValores: () => getPeriodosUltimosMeses(3) }
+];
 
 function getRotulosPeriodosSelecionados() {
     const periodosSelecionados = filterPeriodoEmissaoDropdown.getSelecionados();
@@ -1343,31 +1379,42 @@ function atualizarDashboards() {
     const statusLabels = statusPorMes.map(mes => mes.label);
     const ctxStatus = document.getElementById('osmcChart').getContext('2d');
     
-    if (osmcChartInstance) {
-        osmcChartInstance.data.labels = statusLabels;
-        osmcChartInstance.data.datasets[0].data = statusPorMes.map(mes => mes.pendentes + mes.resolvidas);
-        osmcChartInstance.data.datasets[1].data = statusPorMes.map(mes => mes.resolvidas);
-        osmcChartInstance.data.datasets[2].data = statusPorMes.map(mes => mes.pendentes);
-        osmcChartInstance.update();
-    } else {
-        osmcChartInstance = new Chart(ctxStatus, {
-            type: 'bar',
-            data: {
-                labels: statusLabels,
-                datasets: [
-                    { label: 'Total', data: statusPorMes.map(mes => mes.pendentes + mes.resolvidas), backgroundColor: '#004085' },
-                    { label: 'Resolvidas', data: statusPorMes.map(mes => mes.resolvidas), backgroundColor: '#155724' },
-                    { label: 'Pendentes', data: statusPorMes.map(mes => mes.pendentes), backgroundColor: '#dc3545' }
-                ]
+    const empilhado = filterPeriodoEmissaoDropdown.getSelecionados().size > 1;
+    const totais = statusPorMes.map(mes => mes.pendentes + mes.resolvidas);
+    const datasets = empilhado
+        ? [
+            { type: 'bar', label: 'Resolvidas', data: statusPorMes.map(mes => mes.resolvidas), backgroundColor: '#155724', stack: 'status',
+                datalabels: { color: '#fff', anchor: 'center', align: 'center', display: ctx => ctx.dataset.data[ctx.dataIndex] > 0 } },
+            { type: 'bar', label: 'Pendentes', data: statusPorMes.map(mes => mes.pendentes), backgroundColor: '#dc3545', stack: 'status',
+                datalabels: { color: '#fff', anchor: 'center', align: 'center', display: ctx => ctx.dataset.data[ctx.dataIndex] > 0 } },
+            { type: 'line', label: 'Total', data: totais, borderColor: 'transparent', backgroundColor: 'transparent', pointRadius: 0, pointHoverRadius: 0, showLine: false,
+                datalabels: { color: '#004085', anchor: 'end', align: 'top', font: { weight: 'bold', size: 12 }, formatter: v => `Total: ${v}` } }
+        ]
+        : [
+            { label: 'Total', data: totais, backgroundColor: '#004085' },
+            { label: 'Resolvidas', data: statusPorMes.map(mes => mes.resolvidas), backgroundColor: '#155724' },
+            { label: 'Pendentes', data: statusPorMes.map(mes => mes.pendentes), backgroundColor: '#dc3545' }
+        ];
+
+    if (osmcChartInstance) osmcChartInstance.destroy();
+    osmcChartInstance = new Chart(ctxStatus, {
+        type: 'bar',
+        data: { labels: statusLabels, datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            layout: { padding: { top: empilhado ? 25 : 0 } },
+            plugins: {
+                legend: { position: 'top' },
+                datalabels: { color: '#444', anchor: 'end', align: 'end', font: { weight: 'bold', size: 10 } }
             },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: { position: 'top' }, datalabels: { color: '#444', anchor: 'end', align: 'end', font: { weight: 'bold', size: 10 } } },
-                scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+            scales: {
+                x: { stacked: empilhado },
+                y: { stacked: empilhado, beginAtZero: true, ticks: { precision: 0 } }
             }
-        });
-    }
+        }
+    });
+
 
     // GRÁFICO 2: Execução mensal para empresas selecionadas; blocos sem seleção
     const temEmpresaSelecionada = empresasSelecionadas.length > 0;
