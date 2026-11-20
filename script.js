@@ -1369,12 +1369,14 @@ function atualizarDashboards() {
 
     const empresasSelecionadas = Array.from(filterEmpresaResponsavelDropdown.getSelecionados());
     const sufixoEmpresa = empresasSelecionadas.length ? ` - ${empresasSelecionadas.join(', ')}` : '';
+    const disciplinasSelecionadas = Array.from(filterDisciplinaDropdown.getSelecionados());
+    const sufixoDisciplina = disciplinasSelecionadas.length ? ` - Disciplina: ${disciplinasSelecionadas.join(', ')}` : '';
     const periodo = getRotuloPeriodo();
     const sufixoSemana = periodo ? ` - Período: ${periodo}` : '';
 
     // GRÁFICO 1: Status agrupados por mês de emissão
     document.getElementById('osmcChartTitle').textContent =
-        `Total, Resolvidas e Pendentes por ${getPeriodicidade().agrupador}${sufixoSemana}${sufixoEmpresa}`;
+        `Total, Resolvidas e Pendentes por ${getPeriodicidade().agrupador}${sufixoSemana}${sufixoEmpresa}${sufixoDisciplina}`;
     const statusPorMes = getStatusPorMes(filteredData);
     const statusLabels = statusPorMes.map(mes => mes.label);
     const ctxStatus = document.getElementById('osmcChart').getContext('2d');
@@ -1423,8 +1425,8 @@ function atualizarDashboards() {
         : getTopNData(filteredData, 4, 5);
     const tituloBloco = document.getElementById('blocoChartTitle');
     tituloBloco.textContent = temEmpresaSelecionada
-        ?         `Execução ${getPeriodicidade().adj} (%)${sufixoSemana}${sufixoEmpresa}`
-        : `Top 5 Blocos (Total de OSMC)${sufixoSemana}`;
+        ?         `Execução ${getPeriodicidade().adj} (%)${sufixoSemana}${sufixoEmpresa}${sufixoDisciplina}`
+        : `Top 5 Blocos (Total de OSMC)${sufixoSemana}${sufixoDisciplina}`;
             const rotuloDataset = temEmpresaSelecionada ? `Execução ${getPeriodicidade().adj.toLowerCase()} (%)` : 'Total de OSMC';
     const corDataset = temEmpresaSelecionada ? '#155724' : '#004085';
     const formatarValorBloco = valor => temEmpresaSelecionada ? `${valor}%` : valor;
